@@ -1,0 +1,131 @@
+"""Isolated observer contract probe; performs no input actions."""
+import json
+import math
+import os
+import runpy
+import sys
+import time
+import traceback
+from pathlib import Path
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore
+
+root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root / "tools"))
+from acceptance import ObservationError, read_snapshot
+
+output_dir = Path(os.environ["UNISTATION_TEST_OUTPUT"])
+output_dir.mkdir(parents=True, exist_ok=True)
+output = output_dir / "observer-probe.json"
+run_id = os.environ["UNISTATION_ACCEPTANCE_RUN_ID"]
+scenario_id = os.environ.get("UNISTATION_ACCEPTANCE_SCENARIO_ID", "observer_probe")
+state_path = output_dir / "interactive-state.json"
+report = {"status": "failed", "run_id": run_id, "scenario_id": scenario_id,
+          "method": "observer only; no input", "os_input_verified": False,
+          "snapshots_checked": 0, "observations": []}
+
+
+def write_report():
+    output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+
+def probe():
+    try:
+        command = root / "tests" / "interactive_acceptance.FCMacro"
+        runpy.run_path(str(command))
+        deadline = time.monotonic() + 15
+        snapshots = []
+        last_read_error = None
+        loop = QtCore.QEventLoop()
+        tick = QtCore.QTimer()
+        tick.setSingleShot(True)
+        tick.timeout.connect(loop.quit)
+        while time.monotonic() < deadline:
+            try:
+                snapshot = read_snapshot(state_path, run_id, scenario_id,
+                                         max_age_seconds=5)
+                if not snapshots or snapshot["sequence"] != snapshots[-1]["sequence"]:
+                    snapshots.append(snapshot)
+                    last_read_error = None
+            except (ObservationError, OSError) as exc:
+                last_read_error = str(exc)
+            if len(snapshots) >= 3:
+                break
+            tick.start(100)
+            loop.exec()
+        if len(snapshots) < 3:
+            raise AssertionError("fewer than three valid snapshots within 15 seconds: " + str(last_read_error))
+        observations = snapshots[-3:]
+        for previous, current in zip(observations, observations[1:]):
+            assert current["sequence"] > previous["sequence"], "sequence did not increase"
+            assert current["monotonic_ns"] > previous["monotonic_ns"], "monotonic_ns did not increase"
+        for snapshot in observations:
+            assert snapshot["schema_version"] == 1, "schema_version must be 1"
+            assert snapshot["run_id"] == run_id, "run_id mismatch"
+            assert snapshot["scenario_id"] == scenario_id, "scenario_id mismatch"
+            assert snapshot["pid"] == os.getpid(), "pid mismatch"
+            assert snapshot["driver"] == "unverified", "driver must be unverified"
+            assert snapshot.get("observation_error") is None, "observer reported an error"
+            assert snapshot.get("document_open") is True, "test document must be open"
+            assert snapshot.get("session") is True, "UniStation session must be active"
+            assert snapshot.get("axisflow_active") is True, "AxisFlow must be active"
+            objects = snapshot.get("objects", [])
+            assert len(objects) == 2, "expected the two reference objects"
+            assert all(obj.get("valid") is True for obj in objects), "reference geometry invalid"
+            lines = [obj for obj in objects if "radius" not in obj]
+            circles = [obj for obj in objects if "radius" in obj]
+            assert len(lines) == len(circles) == 1, "expected one line and one circle reference"
+            line = lines[0]
+            assert line["vertices"] == [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0]], "line reference vertices changed"
+            assert math.isclose(line["length"], 40.0, rel_tol=0, abs_tol=1e-7), "line reference length changed"
+            circle = circles[0]
+            assert all(math.isclose(a, b, rel_tol=0, abs_tol=1e-7)
+                       for a, b in zip(circle["placement_base"], (20.0, 15.0, 0.0))), "circle center changed"
+            assert math.isclose(circle["radius"], 5.0, rel_tol=0, abs_tol=1e-7), "circle radius changed"
+            assert math.isclose(circle["length"], 10 * math.pi, rel_tol=0, abs_tol=1e-6), "circle circumference changed"
+            focus = snapshot.get("focus")
+            assert focus is None or (
+                isinstance(focus, dict)
+                and set(focus) == {"object_name", "class_name"}
+                and (focus["object_name"] is None or isinstance(focus["object_name"], str))
+                and (focus["class_name"] is None or isinstance(focus["class_name"], str))
+            ), "focus telemetry has an invalid shape"
+            for key in ("keyin_text", "keyin_selected_text", "keyin_error"):
+                assert isinstance(snapshot.get(key), str), key + " must be a string for an active line task"
+        report["status"] = "passed"
+        report["snapshots_checked"] = len(observations)
+        report["last_sequence"] = observations[-1]["sequence"]
+        report["observations"] = observations
+    except Exception:
+        report["error"] = traceback.format_exc()
+        App.Console.PrintError("Observer probe failed:\n" + report["error"] + "\n")
+    finally:
+        timer = getattr(App, "_unistation_acceptance_timer", None)
+        if timer is not None:
+            timer.stop()
+        try:
+            from unistation import gui
+            if gui._session is not None:
+                gui.cancel()
+        except Exception:
+            report.setdefault("cleanup_errors", []).append("gui.cancel(): " + traceback.format_exc())
+            report["status"] = "failed"
+        doc_name = getattr(App, "_unistation_acceptance_doc_name", None)
+        if doc_name and doc_name in App.listDocuments():
+            try:
+                App.closeDocument(doc_name)
+            except Exception:
+                report.setdefault("cleanup_errors", []).append("close test document: " + traceback.format_exc())
+                report["status"] = "failed"
+        write_report()
+        try:
+            Gui.getMainWindow().close()
+        except Exception:
+            report.setdefault("cleanup_errors", []).append("close main window: " + traceback.format_exc())
+            report["status"] = "failed"
+            write_report()
+
+
+QtCore.QTimer.singleShot(0, probe)

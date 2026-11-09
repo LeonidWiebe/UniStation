@@ -1,0 +1,2800 @@
+"""In-process Qt GUI regression tests, no direct UniStation point callbacks."""
+import json
+import sys
+import traceback
+import hashlib
+import math
+import os
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore, QtGui, QtWidgets
+try:
+    from PySide6.QtTest import QTest
+except ImportError:
+    from PySide2.QtTest import QTest
+
+root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root / "UniStation"))
+sys.path.insert(0, str(root / "tests"))
+import gui_diagnostics
+output_dir = Path(os.environ.get("UNISTATION_TEST_OUTPUT", str(root / "test-output")))
+output_dir.mkdir(parents=True, exist_ok=True)
+output = output_dir / "qt-input.json"
+results = {"freecad": App.Version(), "method": "QtTest events, no point injection",
+           "python": sys.version, "qt": QtCore.qVersion(),
+           "user_data": App.getUserAppDataDir(),
+           "started_at": datetime.now(timezone.utc).isoformat(),
+           "status": "running", "cases": []}
+output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+
+
+def run_one_case(name, test, doc, begin_context, record_failure, cleanup):
+    """Run one case. Diagnostics are recorded before cleanup; cleanup always runs."""
+    try:
+        begin_context(name, doc)
+        detail = test(doc)
+        return {"name": name, "status": "passed", "detail": detail}
+    except Exception:
+        original_error = traceback.format_exc()
+        entry = {"name": name, "status": "failed", "error": original_error}
+        try:
+            extra = record_failure(name, original_error)
+        except Exception as error:
+            extra = {"diagnostics_error": "%s: %s" % (type(error).__name__, error)}
+        if extra:
+            entry.update(extra)
+        entry["name"] = name
+        entry["status"] = "failed"
+        entry["error"] = original_error
+        return entry
+    finally:
+        cleanup()
+
+
+def select_axisflow_cases(registered_names, catalog, requested):
+    """Return registered Qt names allowed for this run, in registration order."""
+    if not isinstance(catalog, dict):
+        raise ValueError("current_scope.json must contain an object")
+    if catalog.get("schema_version") != 1:
+        raise ValueError("Unsupported current_scope schema_version")
+    if catalog.get("scope") != "axisflow-core":
+        raise ValueError("current_scope scope must be axisflow-core")
+    reason = catalog.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("current_scope reason is missing")
+    included = catalog.get("included_qt")
+    deferred_items = catalog.get("deferred_qt")
+    if not isinstance(included, list) or not included:
+        raise ValueError("included_qt must be a non-empty list")
+    if not all(isinstance(name, str) and name for name in included):
+        raise ValueError("included_qt names must be non-empty strings")
+    if len(included) != len(set(included)):
+        raise ValueError("included_qt contains duplicate names")
+    if not isinstance(deferred_items, list):
+        raise ValueError("deferred_qt must be a list")
+    deferred = []
+    for item in deferred_items:
+        if not isinstance(item, dict):
+            raise ValueError("deferred_qt entries must be objects")
+        name = item.get("name")
+        item_reason = item.get("reason")
+        if not isinstance(name, str) or not name:
+            raise ValueError("deferred_qt name is missing")
+        if not isinstance(item_reason, str) or "deferred_by_scope" not in item_reason:
+            raise ValueError("deferred_qt reason must state deferred_by_scope")
+        if name in deferred:
+            raise ValueError("deferred_qt contains duplicate names")
+        deferred.append(name)
+    if set(included) & set(deferred):
+        raise ValueError("A Qt case is both included and deferred")
+    registered = list(registered_names)
+    if not registered or len(registered) != len(set(registered)):
+        raise ValueError("Registered Qt cases are missing or duplicated")
+    covered = set(included) | set(deferred)
+    if covered != set(registered) or len(included) + len(deferred) != len(registered):
+        raise ValueError("current_scope.json does not cover the registered Qt cases")
+    _require_unit_lists(catalog)
+    if requested:
+        wanted = requested.split(",")
+        registered_set = set(registered)
+        deferred_set = set(deferred)
+        unknown = sorted({name for name in wanted if name not in registered_set})
+        blocked = sorted({name for name in wanted if name in deferred_set})
+        if unknown or blocked:
+            parts = []
+            if unknown:
+                parts.append("Unknown GUI cases: " + repr(unknown))
+            if blocked:
+                parts.append(
+                    "Deferred GUI cases are outside axisflow-core: " + repr(blocked))
+            raise ValueError("; ".join(parts))
+        wanted_set = set(wanted)
+        return [name for name in registered if name in wanted_set]
+    included_set = set(included)
+    return [name for name in registered if name in included_set]
+
+
+def _class_name(value, label):
+    if not isinstance(value, str) or value.count(".") != 1:
+        raise ValueError(label + " must be module.Class")
+    module_name, class_name = value.split(".")
+    if not module_name or not class_name:
+        raise ValueError(label + " must be module.Class")
+    return value
+
+
+def _require_unit_lists(catalog):
+    included = catalog.get("included_unit")
+    deferred_items = catalog.get("deferred_unit")
+    if not isinstance(included, list) or not included:
+        raise ValueError("included_unit must be a non-empty list")
+    names = [_class_name(value, "included_unit") for value in included]
+    if len(names) != len(set(names)):
+        raise ValueError("included_unit contains duplicate classes")
+    if not isinstance(deferred_items, list) or not deferred_items:
+        raise ValueError("deferred_unit must be a non-empty list")
+    deferred = []
+    for item in deferred_items:
+        if not isinstance(item, dict):
+            raise ValueError("deferred_unit entries must be objects")
+        class_name = _class_name(item.get("class"), "deferred_unit")
+        item_reason = item.get("reason")
+        if not isinstance(item_reason, str) or "deferred_by_scope" not in item_reason:
+            raise ValueError("deferred_unit reason must state deferred_by_scope")
+        if class_name in deferred:
+            raise ValueError("deferred_unit contains duplicate classes")
+        deferred.append(class_name)
+    if set(names) & set(deferred):
+        raise ValueError("A unit class is both included and deferred")
+
+def run():
+    import AxisFlow as AF
+    import WorkingPlane
+    from unistation import gui
+    results["axisflow_binary"] = AF.__file__
+    from runtime_metadata import native_modules
+    results["native_modules"] = native_modules()
+    results["axisflow_sha256"] = hashlib.sha256(Path(AF.__file__).read_bytes()).hexdigest()
+    Gui.activateWorkbench("DraftWorkbench")
+    Gui.activateWorkbench("UniStationWorkbench")
+    results["hotkeys"] = AF.getSettings()["hotkeys"]
+    AF.setSetting("smartNegativeDirection", False)
+    AF.setSetting("focusAdvanceOnMove", False)
+    AF.setSetting("compassFollowDirection", 0)
+    AF.setSetting("useSnapping", False)
+    AF.setSetting("useAxesIndexing", False)
+    AF.setSetting("useDistanceIndexing", False)
+    # Retain wrappers for C++-owned top-level addon widgets throughout the test.
+    widget_refs = []
+    trace = gui_diagnostics.CaseTrace(str(uuid.uuid4()))
+
+    def wait():
+        QTest.qWait(100)
+
+    def panel():
+        top_levels = QtWidgets.QApplication.topLevelWidgets()
+        widget_refs.extend(top_levels)
+        candidates = [w for w in top_levels
+                      if len(w.findChildren(QtWidgets.QLineEdit)) == 3
+                      and any(l.text() == "AxisFlow"
+                              for l in w.findChildren(QtWidgets.QLabel))]
+        assert len(candidates) == 1, repr([(w.metaObject().className(), w.windowTitle())
+                                         for w in QtWidgets.QApplication.topLevelWidgets()])
+        return candidates[0]
+
+    def fields():
+        return panel().findChildren(QtWidgets.QLineEdit)
+
+    def keyin_widgets():
+        task_panel = gui._session.backend.panel
+        form = task_panel.form
+        edit = form.findChild(QtWidgets.QLineEdit, "unistation_keyin")
+        apply = form.findChild(QtWidgets.QPushButton, "unistation_keyin_apply")
+        error = form.findChild(QtWidgets.QLabel, "unistation_keyin_error")
+        assert edit is not None and apply is not None and error is not None
+        return task_panel, edit, apply, error
+
+    def keyin_submit(text, by="return"):
+        _, edit, apply, _ = keyin_widgets()
+        edit.window().activateWindow()
+        wait()
+        edit.setFocus()
+        assert QtWidgets.QApplication.focusWidget() is edit, "Key-in field did not receive focus"
+        edit.selectAll()
+        QTest.keyClicks(edit, text)
+        if by == "return":
+            QTest.keyClick(edit, QtCore.Qt.Key_Return)
+        elif by == "button":
+            QTest.mouseClick(apply, QtCore.Qt.LeftButton)
+        else:
+            raise ValueError("Unknown key-in submit method: " + by)
+        wait()
+
+    def enter(values):
+        # QTest targets a widget, while AxisFlow's app filter routes by actual
+        # QApplication focus. Establish both, including in a hidden test window.
+        panel().activateWindow()
+        wait()
+        for edit, value in zip(fields(), values):
+            edit.setFocus()
+            assert QtWidgets.QApplication.focusWidget() is edit, "AxisFlow field did not receive focus"
+            edit.selectAll()
+            QTest.keyClicks(edit, str(value))
+        wait()
+
+    def action(name):
+        keys = AF.getSettings()["hotkeys"][name]
+        assert keys, "Unbound action: " + name
+        chord = keys[0] if isinstance(keys[0], list) else [keys[0]]
+        for key in chord:
+            QTest.keyClick(fields()[0], QtCore.Qt.Key(key))
+        wait()
+
+    def frame(world):
+        button = panel().findChildren(QtWidgets.QPushButton)[0]
+        world_label = QtCore.QCoreApplication.translate("AxisFlowGui::AxisFlowPanel", "World")
+        if (button.text() == world_label) != world:
+            QTest.mouseClick(button, QtCore.Qt.LeftButton)
+        wait()
+
+    def points(obj):
+        return [list(v.Point) for v in obj.Shape.Vertexes]
+
+    def equal(actual, expected):
+        assert len(actual) == len(expected), (actual, expected)
+        for a, e in zip(actual, expected):
+            assert (App.Vector(*a) - App.Vector(*e)).Length < 1e-6, (actual, expected)
+
+    def start():
+        gui.start()
+        AF.setMode("rect")
+        frame(False)
+        wait()
+
+    def numeric(doc):
+        start()
+        enter((1, 2, 3))
+        action("ConfirmPoint")
+        assert gui._session.first is not None
+        enter((-4.5, 6.25, 0))
+        action("ConfirmPoint")
+        equal(points(doc.Objects[0]), [[1, 2, 3], [-3.5, 8.25, 3]])
+        assert gui._session is None and not AF.isActive()
+        return points(doc.Objects[0])
+
+    def world(doc):
+        start()
+        frame(True)
+        enter((10, 20, 0))
+        action("ConfirmPoint")
+        enter((15, 27, 0))
+        action("ConfirmPoint")
+        equal(points(doc.Objects[0]), [[10, 20, 0], [15, 27, 0]])
+        return points(doc.Objects[0])
+
+    def keyin_absolute_relative_undo(doc):
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        start()
+        keyin_submit("abs 10; 20; 0", "button")
+        equal([list(gui._session.first)], [[10, 20, 0]])
+        assert not doc.Objects and doc.UndoCount == before
+        keyin_submit("rel 5 cm; -2 cm; 0")
+        assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == 1 and doc.UndoCount == before + 1
+        equal(points(doc.Objects[0]), [[10, 20, 0], [60, 0, 0]])
+        doc.undo()
+        assert not doc.Objects
+        doc.redo()
+        assert len(doc.Objects) == 1
+        equal(points(doc.Objects[0]), [[10, 20, 0], [60, 0, 0]])
+
+    def keyin_invalid_retry(doc):
+        start()
+        state_origin = list(AF.getState()["origin"])
+        keyin_submit("rel 1; 2; 3")
+        _, edit, _, error = keyin_widgets()
+        assert error.text() and edit.selectedText() == "rel 1; 2; 3"
+        assert gui._session.first is None and gui._session.origin is not None
+        equal([list(AF.getState()["origin"])], [state_origin])
+        assert gui._session is not None and AF.isActive() and not doc.Objects
+        keyin_submit("abs 1,5; 2; 3")
+        _, edit, _, error = keyin_widgets()
+        assert error.text() and edit.selectedText() == "abs 1,5; 2; 3"
+        assert gui._session.first is None and not doc.Objects
+        equal([list(AF.getState()["origin"])], [state_origin])
+        keyin_submit("abs 1; 2; 3")
+        equal([list(gui._session.first)], [[1, 2, 3]])
+
+    def keyin_duplicate_retry(doc):
+        start()
+        keyin_submit("abs 1; 2; 3")
+        first = gui._session.first
+        origin = list(AF.getState()["origin"])
+        keyin_submit("rel 0; 0; 0")
+        _, edit, _, error = keyin_widgets()
+        assert error.text() and edit.selectedText() == "rel 0; 0; 0"
+        assert gui._session.first is first and not doc.Objects
+        equal([list(AF.getState()["origin"])], [origin])
+        keyin_submit("rel 2; 0; 0")
+        assert gui._session is None and len(doc.Objects) == 1
+        equal(points(doc.Objects[0]), [[1, 2, 3], [3, 2, 3]])
+
+    def keyin_after_axisflow_world(doc):
+        start()
+        frame(True)
+        enter((10, 20, 0))
+        action("ConfirmPoint")
+        equal([list(gui._session.first)], [[10, 20, 0]])
+        keyin_submit("rel 5 cm; -2 cm; 0")
+        assert gui._session is None and len(doc.Objects) == 1
+        equal(points(doc.Objects[0]), [[10, 20, 0], [60, 0, 0]])
+
+    def keyin_after_mouse_world(doc):
+        click = App.Vector(-10, -5, 0)
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        start()
+        frame(True)
+        mouse_at(click, True)
+        assert gui._session is not None and AF.isActive()
+        assert gui._session.first is not None and not doc.Objects
+        assert doc.UndoCount == before
+        # Value copy: session.first may later be replaced or mutated.
+        accepted = (float(gui._session.first.x), float(gui._session.first.y),
+                    float(gui._session.first.z))
+        assert (App.Vector(*accepted) - click).Length < 1, accepted
+        keyin_submit("rel 0; 5; 0")
+        assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == 1 and doc.UndoCount == before + 1
+        obj = doc.Objects[0]
+        assert obj.Shape.isValid() and len(obj.Shape.Edges) == 1
+        expected = [list(accepted), [accepted[0], accepted[1] + 5.0, accepted[2]]]
+        equal(points(obj), expected)
+        length = float(obj.Shape.Length)
+        assert abs(length - 5) < 1e-7, length
+        vertices = points(obj)
+        undo_count = doc.UndoCount
+        doc.undo()
+        objects_after_undo = len(doc.Objects)
+        assert objects_after_undo == 0
+        doc.redo()
+        assert len(doc.Objects) == 1
+        redone = points(doc.Objects[0])
+        equal(redone, vertices)
+        return {"target": [[-10.0, -5.0, 0.0], [0.0, 5.0, 0.0]],
+                "accepted_first": list(accepted),
+                "vertices": vertices,
+                "length": length,
+                "undo_count_before": before,
+                "undo_count_after": undo_count,
+                "objects_after_undo": objects_after_undo,
+                "redo_vertices": redone}
+
+    def mouse_after_keyin_world(doc):
+        click = App.Vector(10, 5, 0)
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        start()
+        frame(True)
+        keyin_submit("abs -10; -10; 0")
+        assert gui._session is not None and AF.isActive()
+        assert gui._session.first is not None and not doc.Objects
+        assert doc.UndoCount == before
+        equal([list(gui._session.first)], [[-10, -10, 0]])
+        equal([list(AF.getState()["origin"])], [[-10, -10, 0]])
+        mouse_at(click, True)
+        assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == 1 and doc.UndoCount == before + 1
+        obj = doc.Objects[0]
+        assert obj.Shape.isValid() and len(obj.Shape.Edges) == 1
+        vertices = points(obj)
+        equal([vertices[0]], [[-10, -10, 0]])
+        end_error = (App.Vector(*vertices[1]) - click).Length
+        assert end_error < 1, vertices[1]
+        length = float(obj.Shape.Length)
+        assert abs(length - 25) < 1, length
+        undo_count = doc.UndoCount
+        doc.undo()
+        objects_after_undo = len(doc.Objects)
+        assert objects_after_undo == 0
+        doc.redo()
+        assert len(doc.Objects) == 1
+        redone = points(doc.Objects[0])
+        equal(redone, vertices)
+        return {"target": [[-10.0, -10.0, 0.0], [10.0, 5.0, 0.0]],
+                "vertices": vertices,
+                "length": length,
+                "endpoint_error": end_error,
+                "undo_count_before": before,
+                "undo_count_after": undo_count,
+                "objects_after_undo": objects_after_undo,
+                "redo_vertices": redone}
+
+    def line_visual_checkpoints(doc):
+        visual_dir = output_dir / "line-visual"
+        if visual_dir.exists():
+            raise RuntimeError("line-visual already exists")
+        visual_dir.mkdir()
+        started = datetime.now(timezone.utc).isoformat()
+        checkpoints = []
+        report_path = visual_dir / "checkpoints.json"
+
+        def persist():
+            payload = {"task_id": "GROK-002", "input_method": "qt",
+                       "os_input_verified": False, "visual_review": "pending",
+                       "started_at": started, "checkpoints": checkpoints}
+            report_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                                   encoding="utf-8")
+
+        def plain_point(value):
+            return [float(value[0]), float(value[1]), float(value[2])]
+
+        def session_state():
+            active = gui._session is not None
+            first = None
+            if active and gui._session.first is not None:
+                first = plain_point(gui._session.first)
+            return {"session_active": active, "axisflow_active": bool(AF.isActive()),
+                    "first": first}
+
+        def document_objects():
+            described = []
+            for obj in doc.Objects:
+                described.append({
+                    "name": str(obj.Name),
+                    "vertices": [[float(component) for component in vertex]
+                                 for vertex in points(obj)],
+                    "length": float(obj.Shape.Length),
+                })
+            return described
+
+        def preview_state(active_backend):
+            if active_backend is None or bool(active_backend.closed):
+                return {"num_vertices": None, "vertices": None, "endpoint_error": None}
+            count = int(active_backend.lines.numVertices[0])
+            vertices = []
+            if count > 0:
+                values = active_backend.coords.point.getValues()
+                vertices = [plain_point(values[index]) for index in range(count)]
+            return {"num_vertices": count, "vertices": vertices, "endpoint_error": None}
+
+        def keyin_state(form_alive):
+            if not form_alive:
+                return {"text": None, "error": None, "selected_text": None}
+            _, edit, _, error = keyin_widgets()
+            return {"text": edit.text(), "error": error.text(),
+                    "selected_text": edit.selectedText()}
+
+        def focus_state():
+            widget = QtWidgets.QApplication.focusWidget()
+            if widget is None:
+                return {"object_name": None, "class_name": None}
+            return {"object_name": str(widget.objectName()),
+                    "class_name": str(widget.metaObject().className())}
+
+        def read_png(path):
+            assert path.is_file(), str(path)
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            image = QtGui.QImage(str(path))
+            assert image.isNull() == False, str(path)
+            assert image.width() > 0 and image.height() > 0, str(path)
+            return {"path": path.relative_to(output_dir).as_posix(),
+                    "sha256": digest,
+                    "width": int(image.width()), "height": int(image.height())}
+
+        def save_grab(widget, path):
+            saved = widget.grab().save(str(path), "PNG")
+            assert saved == True, (str(path), saved)
+            return read_png(path)
+
+        def scene_size():
+            gl = viewport()
+            dpr = float(gl.devicePixelRatioF())
+            width = int(round(gl.width() * dpr))
+            height = int(round(gl.height() * dpr))
+            assert width > 0 and height > 0, (width, height, dpr)
+            return gl, dpr, width, height
+
+        def project_endpoints(world_points):
+            # getPointOnScreen is already in physical viewport pixels; do not flip Y.
+            _, _, width, height = scene_size()
+            view = Gui.activeDocument().activeView()
+            endpoints = []
+            for point in world_points:
+                xyz = [float(point[0]), float(point[1]), float(point[2])]
+                x, y = view.getPointOnScreen(App.Vector(*xyz))
+                screen = [float(x), float(y)]
+                assert 32 <= screen[0] < width - 32 and 32 <= screen[1] < height - 32, (
+                    xyz, screen, width, height)
+                endpoints.append({"point": xyz, "screen": screen})
+            return {"width": width, "height": height, "margin": 32, "endpoints": endpoints}
+
+        def capture(checkpoint_id, sequence, active_backend, form_alive, target=None,
+                    projected_endpoints=None):
+            wait()
+            window = Gui.getMainWindow()
+            gl, dpr, scene_width, scene_height = scene_size()
+            preview = preview_state(active_backend)
+            if target is not None and preview["vertices"]:
+                preview["endpoint_error"] = float(
+                    (App.Vector(*preview["vertices"][-1]) - App.Vector(*target[-1])).Length)
+            focus = focus_state()
+            keyin = keyin_state(form_alive)
+            observed = session_state()
+            objects = document_objects()
+            window_info = save_grab(window, visual_dir / (checkpoint_id + "-window.png"))
+            scene_path = visual_dir / (checkpoint_id + "-scene.png")
+            Gui.activeDocument().activeView().saveImage(
+                str(scene_path), scene_width, scene_height, "Current")
+            scene_info = read_png(scene_path)
+            panel_info = None
+            if form_alive:
+                panel_info = save_grab(active_backend.panel.form,
+                                       visual_dir / (checkpoint_id + "-panel.png"))
+            checkpoints.append({
+                "id": checkpoint_id,
+                "sequence": sequence,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "session_active": observed["session_active"],
+                "axisflow_active": observed["axisflow_active"],
+                "first": observed["first"],
+                "objects": objects,
+                "preview": preview,
+                "preview_target": target,
+                "backend_closed": bool(active_backend.closed),
+                "keyin": keyin,
+                "focus": focus,
+                "dpr": dpr,
+                "logical_size": {
+                    "window": [int(window.width()), int(window.height())],
+                    "viewport": [int(gl.width()), int(gl.height())],
+                },
+                "scene_pixels": [scene_width, scene_height],
+                "projected_endpoints": projected_endpoints,
+                "images": {"window": window_info, "scene": scene_info, "panel": panel_info},
+            })
+            persist()
+            return checkpoints[-1]
+
+        def assert_saved_line(shot, name):
+            assert len(doc.Objects) == 1 and len(shot["objects"]) == 1
+            obj = doc.Objects[0]
+            assert obj.Name == name and shot["objects"][0]["name"] == name
+            assert obj.Shape.isValid() and len(obj.Shape.Edges) == 1
+            equal(shot["objects"][0]["vertices"], [[-1, -1, 0], [1, 0.5, 0]])
+            assert abs(shot["objects"][0]["length"] - 2.5) < 1e-7, shot["objects"][0]["length"]
+
+        persist()
+        start()
+        frame(True)
+        backend = gui._session.backend
+        initial = capture("initial", 1, backend, True)
+        _, edit, apply, _ = keyin_widgets()
+        assert edit.isEnabled() and apply.isEnabled()
+        assert initial["session_active"] is True and initial["axisflow_active"] is True
+        assert gui._session is not None and gui._session.first is None and initial["first"] is None
+        assert AF.isActive() and not doc.Objects and initial["objects"] == []
+        assert initial["preview"]["num_vertices"] == 0 and initial["backend_closed"] is False
+        assert initial["images"]["panel"] is not None
+
+        keyin_submit("abs 1; 2")
+        invalid = capture("invalid", 2, backend, True)
+        assert invalid["keyin"]["error"]
+        assert invalid["keyin"]["text"] == "abs 1; 2"
+        assert invalid["keyin"]["selected_text"] == "abs 1; 2"
+        assert invalid["first"] is None and gui._session.first is None
+        assert invalid["objects"] == [] and not doc.Objects
+        assert invalid["session_active"] is True and invalid["axisflow_active"] is True
+        assert gui._session is not None and AF.isActive()
+        assert invalid["backend_closed"] is False and invalid["images"]["panel"] is not None
+
+        line_target = [[-1.0, -1.0, 0.0], [1.0, 0.5, 0.0]]
+        keyin_submit("abs -1; -1; 0")
+        line_target_projection = project_endpoints(line_target)
+        mouse_at(App.Vector(1, 0.5, 0), False)
+        preview_now = preview_state(backend)
+        assert preview_now["num_vertices"] == 2
+        preview_projection = project_endpoints(preview_now["vertices"])
+        preview = capture("preview", 3, backend, True, line_target, {
+            "target": line_target_projection, "preview": preview_projection, "line": None})
+        equal([preview["first"]], [line_target[0]])
+        equal([list(gui._session.first)], [line_target[0]])
+        assert preview["keyin"]["error"] == ""
+        assert preview["objects"] == [] and not doc.Objects
+        assert preview["preview"]["num_vertices"] == 2
+        equal([preview["preview"]["vertices"][0]], [line_target[0]])
+        assert preview["preview"]["endpoint_error"] < 0.05, preview["preview"]["vertices"][1]
+        assert preview["session_active"] is True and preview["axisflow_active"] is True
+        assert preview["backend_closed"] is False and preview["images"]["panel"] is not None
+
+        keyin_submit("rel 2; 1.5; 0")
+        created_projection = project_endpoints(points(doc.Objects[0]))
+        committed = capture("committed", 4, backend, False, projected_endpoints={
+            "target": None, "preview": None, "line": created_projection})
+        assert gui._session is None and not AF.isActive()
+        assert committed["session_active"] is False and committed["axisflow_active"] is False
+        assert committed["backend_closed"] is True and backend.closed is True
+        assert committed["keyin"]["text"] is None and committed["keyin"]["error"] is None
+        assert committed["keyin"]["selected_text"] is None
+        assert committed["preview"]["num_vertices"] is None and committed["images"]["panel"] is None
+        assert_saved_line(committed, doc.Objects[0].Name)
+        committed_name = doc.Objects[0].Name
+
+        start()
+        frame(True)
+        backend2 = gui._session.backend
+        cancel_target = [[-1.0, 0.5, 0.0], [1.0, -0.5, 0.0]]
+        keyin_submit("abs -1; 0.5; 0")
+        cancel_target_projection = project_endpoints(cancel_target)
+        mouse_at(App.Vector(1, -0.5, 0), False)
+        cancel_now = preview_state(backend2)
+        assert cancel_now["num_vertices"] == 2
+        cancel_preview_projection = project_endpoints(cancel_now["vertices"])
+        saved_line_projection = project_endpoints(points(doc.Objects[0]))
+        cancel_preview = capture("cancel_preview", 5, backend2, True, cancel_target, {
+            "target": cancel_target_projection, "preview": cancel_preview_projection,
+            "line": saved_line_projection})
+        assert_saved_line(cancel_preview, committed_name)
+        equal([cancel_preview["first"]], [cancel_target[0]])
+        equal([list(gui._session.first)], [cancel_target[0]])
+        assert cancel_preview["preview"]["num_vertices"] == 2
+        equal([cancel_preview["preview"]["vertices"][0]], [cancel_target[0]])
+        assert cancel_preview["preview"]["endpoint_error"] < 0.05, cancel_preview["preview"]["vertices"][1]
+        assert cancel_preview["session_active"] is True and cancel_preview["axisflow_active"] is True
+        assert cancel_preview["backend_closed"] is False
+        assert cancel_preview["images"]["panel"] is not None
+
+        _, edit, _, _ = keyin_widgets()
+        edit.window().activateWindow()
+        wait()
+        edit.setFocus()
+        assert QtWidgets.QApplication.focusWidget() is edit, "Key-in field did not receive focus"
+        QTest.keyClick(edit, QtCore.Qt.Key_Escape)
+        wait()
+        cancelled_line_projection = project_endpoints(points(doc.Objects[0]))
+        cancelled = capture("cancelled", 6, backend2, False, projected_endpoints={
+            "target": None, "preview": None, "line": cancelled_line_projection})
+        assert gui._session is None and not AF.isActive()
+        assert cancelled["session_active"] is False and cancelled["axisflow_active"] is False
+        assert cancelled["backend_closed"] is True and backend2.closed is True
+        assert cancelled["keyin"]["text"] is None and cancelled["images"]["panel"] is None
+        assert cancelled["preview"]["num_vertices"] is None
+        assert_saved_line(cancelled, committed_name)
+        pngs = list(visual_dir.glob("*.png"))
+        assert len(checkpoints) == 6 and len(pngs) == 16, (len(checkpoints), len(pngs))
+        return {"checkpoints": str(report_path), "points": 6, "images": 16,
+                "visual_review": "pending", "os_input_verified": False}
+
+    def axisflow_after_keyin_local(doc):
+        start()
+        keyin_submit("abs 10; 20; 3")
+        enter((5, 7, 0))
+        action("ConfirmPoint")
+        assert gui._session is None and len(doc.Objects) == 1
+        equal(points(doc.Objects[0]), [[10, 20, 3], [15, 27, 3]])
+
+    def keyin_tilted_world(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                            App.Rotation(App.Vector(1, 0, 0), 30)))
+        start()
+        expected = [[10, 12, 40], [17, 22, 45]]
+        keyin_submit("abs 10; 12; 40")
+        keyin_submit("abs 17; 22; 45")
+        assert gui._session is None and len(doc.Objects) == 1
+        equal(points(doc.Objects[0]), expected)
+
+    def keyin_escape(doc):
+        start()
+        _, edit, _, _ = keyin_widgets()
+        edit.setFocus()
+        QTest.keyClicks(edit, "abs 1; 2; 3")
+        QTest.keyClick(edit, QtCore.Qt.Key_Escape)
+        QTest.qWait(100)
+        assert gui._session is None and not AF.isActive() and not doc.Objects
+
+    def keyin_close_focused(doc):
+        start()
+        _, edit, _, _ = keyin_widgets()
+        edit.setFocus()
+        QTest.keyClicks(edit, "abs 1; 2; 3")
+        App.closeDocument(doc.Name)
+        QTest.qWait(250)
+        assert gui._session is None and not AF.isActive()
+
+    def keyin_return_vs_smart_lock(doc):
+        start()
+        keyin_submit("abs 1; 2; 3")
+        enter((5, 7, 0))
+        QTest.keyClick(fields()[0], QtCore.Qt.Key_Return)
+        wait()
+        assert gui._session is not None and AF.isActive() and not doc.Objects
+        equal([list(gui._session.first)], [[1, 2, 3]])
+        lock_state = AF.getState()["locks"]
+        assert any(bool(value) for value in lock_state.values()), lock_state
+        AF.clearLocks()
+        enter((5, 7, 0))
+        action("ConfirmPoint")
+        assert gui._session is None and len(doc.Objects) == 1
+        equal(points(doc.Objects[0]), [[1, 2, 3], [6, 9, 3]])
+
+    def keyin_stale_panel(doc):
+        start()
+        task_panel, _, _, _ = keyin_widgets()
+        keyin_submit("abs 1; 2; 3")
+        gui.cancel()
+        before = len(doc.Objects)
+        task_panel.apply_coordinates()
+        assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == before == 0
+
+    def escape(doc):
+        start()
+        enter((1, 2, 3))
+        action("ConfirmPoint")
+        enter((5, 6, 7))
+        action("FinishLine")
+        assert gui._session is None and not AF.isActive() and not doc.Objects
+
+    def power(doc):
+        start()
+        buttons = panel().findChildren(QtWidgets.QToolButton)
+        assert len(buttons) == 1
+        QTest.mouseClick(buttons[0], QtCore.Qt.LeftButton)
+        QTest.qWait(250)
+        assert gui._session is None and not Gui.Control.activeDialog(), \
+            "AxisFlow off left the UniStation task open"
+
+    def polar(doc):
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        action("ToggleMode")
+        assert AF.getMode() == "polar"
+        enter((10, 90, 0))
+        action("ConfirmPoint")
+        equal(points(doc.Objects[0]), [[0, 0, 0], [0, 10, 0]])
+        return points(doc.Objects[0])
+
+    def translated_plane(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.set_to_top(offset=25)
+        start()
+        diagnostic = {"wp_origin": list(WorkingPlane.get_working_plane(update=False).position),
+                      "session_origin": list(gui._session.origin),
+                      "axisflow_origin": list(AF.getState()["origin"]),
+                      "button": panel().findChildren(QtWidgets.QPushButton)[0].text()}
+        results["translated_diagnostic"] = diagnostic
+        enter((0, 0, 0))
+        diagnostic["origin_after_entry"] = list(AF.getState()["origin"])
+        action("ConfirmPoint")
+        enter((10, 0, 0))
+        action("ConfirmPoint")
+        assert all(abs(v.Point.z - 25) < 1e-6 for v in doc.Objects[0].Shape.Vertexes), \
+            points(doc.Objects[0])
+        return points(doc.Objects[0])
+
+    def tilted_plane(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                          App.Rotation(App.Vector(1, 0, 0), 30)))
+        expected = [list(wp.position), list(wp.position + 10 * wp.u + 5 * wp.v)]
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        enter((10, 5, 0))
+        action("ConfirmPoint")
+        equal(points(doc.Objects[0]), expected)
+        return points(doc.Objects[0])
+
+    def smart_lock(doc):
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        edit = fields()[0]
+        QTest.keyClick(edit, QtCore.Qt.Key_Return)
+        wait()
+        assert gui._session is not None and not doc.Objects
+        assert gui.key_hint(AF, "ConfirmPoint") == "P"
+        assert "P" in gui._session.backend.panel.instructions.text()
+        return {"enter_did_not_confirm": True,
+                "confirm_hint": gui.key_hint(AF, "ConfirmPoint")}
+
+    def close_document(doc):
+        start()
+        App.closeDocument(doc.Name)
+        QTest.qWait(250)
+        assert gui._session is None and not AF.isActive()
+
+    def observation_readers():
+        def document_names():
+            documents = App.listDocuments()
+            if isinstance(documents, dict):
+                return [str(name) for name in documents]
+            names = []
+            for item in documents:
+                name = getattr(item, "Name", None)
+                names.append(str(item if name is None else name))
+            return names
+
+        def active_document_name():
+            document = App.ActiveDocument
+            return None if document is None else str(document.Name)
+
+        def gui_active_document():
+            return Gui.activeDocument()
+
+        def active_view():
+            document = Gui.activeDocument()
+            return None if document is None else document.activeView()
+
+        def session():
+            return getattr(gui, "_session", None)
+
+        def axisflow_active():
+            return AF.isActive()
+
+        def retain(widget):
+            if widget is not None:
+                widget_refs.append(widget)
+            return widget
+
+        def focus_widget():
+            return retain(QtWidgets.QApplication.focusWidget())
+
+        def active_window():
+            return retain(QtWidgets.QApplication.activeWindow())
+
+        def mdi_area():
+            window = Gui.getMainWindow()
+            return None if window is None else retain(window.findChild(QtWidgets.QMdiArea))
+
+        def find_children(parent, child_class):
+            children = list(parent.findChildren(child_class))
+            widget_refs.extend(children)
+            return children
+
+        def list_subwindows(area):
+            windows = list(area.subWindowList())
+            widget_refs.extend(windows)
+            return windows
+
+        return {
+            "document_names": document_names,
+            "active_document_name": active_document_name,
+            "gui_active_document": gui_active_document,
+            "active_view": active_view,
+            "session": session,
+            "axisflow_active": axisflow_active,
+            "focus_widget": focus_widget,
+            "active_window": active_window,
+            "mdi_area": mdi_area,
+            "widget_class": lambda: QtWidgets.QWidget,
+            "find_children": find_children,
+            "list_subwindows": list_subwindows,
+            "retain": retain,
+        }
+
+    def note_mouse(point, click, phase):
+        trace.add_event(
+            phase, (float(point.x), float(point.y), float(point.z)), click,
+            gui_diagnostics.collect_snapshot(observation_readers()))
+
+    def viewport():
+        window = Gui.getMainWindow()
+        mdi = None if window is None else window.findChild(QtWidgets.QMdiArea)
+        widgets, candidates = gui_diagnostics.opengl_viewport_widgets(
+            mdi, QtWidgets.QWidget)
+        widget_refs.extend(widgets)
+        return gui_diagnostics.require_single_opengl(widgets, candidates)
+
+    def mouse_at(point, click=False):
+        note_mouse(point, click, "before_view")
+        view = Gui.activeDocument().activeView()
+        gl = viewport()
+        x, y = view.getPointOnScreen(point)
+        dpr = gl.devicePixelRatioF()
+        pos = QtCore.QPoint(
+            round(x / dpr),
+            round((round(gl.height() * dpr) - y - 1) / dpr))
+        results["mouse_device_pixel_ratio"] = dpr
+        results["mouse_logical_viewport_size"] = [int(gl.width()), int(gl.height())]
+        # Feed Qt -> Quarter -> Coin -> AxisFlow, never call a point callback.
+        # QTest.mouseMove uses the OS cursor on some platforms, so construct
+        # the Qt move event explicitly for reproducibility in a hidden process.
+        local = QtCore.QPointF(pos)
+        event = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, local,
+                                 QtCore.QPointF(gl.mapToGlobal(pos)),
+                                 QtCore.Qt.NoButton, QtCore.Qt.NoButton,
+                                 QtCore.Qt.NoModifier)
+        QtWidgets.QApplication.sendEvent(gl, event)
+        wait()
+        note_mouse(point, click, "after_move")
+        if click:
+            QTest.mouseClick(gl, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, pos)
+            wait()
+            note_mouse(point, click, "after_click")
+
+    def mouse_line(doc):
+        start()
+        mouse_at(App.Vector(-10, -5, 0), True)
+        assert gui._session.first is not None
+        mouse_at(App.Vector(10, 5, 0), True)
+        assert gui._session is None and len(doc.Objects) == 1
+        # Screen projection is quantized to pixels.
+        for actual, target in zip(doc.Objects[0].Shape.Vertexes,
+                                  (App.Vector(-10, -5, 0), App.Vector(10, 5, 0))):
+            assert (actual.Point - target).Length < 1, points(doc.Objects[0])
+        return points(doc.Objects[0])
+
+    def endpoint_snap(doc):
+        import Draft
+        import DraftTools
+        reference = Draft.make_line(App.Vector(-20, 0, 0), App.Vector(20, 0, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Endpoint")
+        start()
+        mouse_at(App.Vector(-20, 0, 0), True)
+        mouse_at(App.Vector(20, 0, 0), True)
+        assert gui._session is None and len(doc.Objects) == 2
+        created = next(obj for obj in doc.Objects if obj is not reference)
+        equal(points(created), [[-20, 0, 0], [20, 0, 0]])
+        return points(created)
+
+    def only_snap(mode):
+        for name in Gui.Snapper.snaps:
+            desired = name in ("Lock", mode)
+            if (name in Gui.Snapper.active_snaps) != desired:
+                Gui.Snapper.toggle_snap(name)
+
+    def midpoint_snap(doc):
+        import Draft
+        import DraftTools
+        Draft.make_line(App.Vector(-20, 10, 0), App.Vector(20, 10, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Midpoint")
+        start()
+        mouse_at(App.Vector(1, 10, 0), True)
+        equal([list(gui._session.first)], [[0, 10, 0]])
+        return list(gui._session.first)
+
+    def center_snap(doc):
+        import Draft
+        import DraftTools
+        Draft.make_circle(20, placement=App.Placement(App.Vector(10, 5, 0), App.Rotation()))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Center")
+        start()
+        # Draft's Center snap targets points offset from quadrant snaps.
+        angle = math.radians(75)
+        mouse_at(App.Vector(10 + 20 * math.sin(angle), 5 + 20 * math.cos(angle), 0), True)
+        equal([list(gui._session.first)], [[10, 5, 0]])
+        return list(gui._session.first)
+
+    def axis_lock(doc):
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        mouse_at(App.Vector(10, 3, 0))
+        captured = gui._session.backend.coords.point.getValues()[1]
+        action("LockY")
+        action("LockZ")
+        mouse_at(App.Vector(10, 7, 0), True)
+        assert gui._session is None and len(doc.Objects) == 1
+        end = doc.Objects[0].Shape.Vertexes[1].Point
+        assert abs(end.y - captured[1]) < 1e-6 and abs(end.z - captured[2]) < 1e-6 \
+            and abs(end.x - 10) < 1, (points(doc.Objects[0]), list(captured))
+        return points(doc.Objects[0])
+
+    def numeric_unit_validator(doc):
+        start()
+        validator = fields()[0].validator()
+        accepted = validator.validate("10 mm", 5)[0] == QtGui.QValidator.Acceptable
+        assert not accepted, "Update the compatibility report: units are now accepted"
+        return {"unit_suffix_supported": False}
+
+    def intersection_snap(doc):
+        import Draft
+        import DraftTools
+        Draft.make_line(App.Vector(-20, 4, 0), App.Vector(20, 4, 0))
+        Draft.make_line(App.Vector(3, -20, 0), App.Vector(3, 20, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Intersection")
+        start()
+        mouse_at(App.Vector(-10, 4, 0))  # register first edge in Draft snap history
+        mouse_at(App.Vector(3, 10, 0))   # register the crossing edge, away from overlap
+        mouse_at(App.Vector(3.2, 4, 0), True)
+        results["intersection_diagnostic"] = {
+            "history": list(Gui.Snapper.lastObj),
+            "subelements": list(Gui.Snapper.lastObjSubelements),
+            "snap_info": str(Gui.Snapper.snapInfo),
+        }
+        equal([list(gui._session.first)], [[3, 4, 0]])
+        return list(gui._session.first)
+
+    def transaction_failure(doc):
+        import Draft
+        original = Draft.make_line
+
+        def fail_after_create(*args):
+            original(*args)
+            raise RuntimeError("intentional transaction rollback test")
+
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        Draft.make_line = fail_after_create
+        try:
+            enter((10, 0, 0))
+            action("ConfirmPoint")
+        finally:
+            Draft.make_line = original
+        assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def workbench_switch(doc):
+        for name in ("PartWorkbench", "SketcherWorkbench", "DraftWorkbench"):
+            Gui.activateWorkbench("UniStationWorkbench")
+            start()
+            Gui.activateWorkbench(name)
+            wait()
+            assert gui._session is None and not AF.isActive(), name
+        Gui.activateWorkbench("UniStationWorkbench")
+
+    def wire_start():
+        Gui.runCommand("UniStation_Wire")
+        AF.setMode("rect")
+        frame(False)
+        wait()
+
+    def keyin_field():
+        if gui._session is None:
+            return None
+        return gui._session.backend.panel.form.findChild(
+            QtWidgets.QLineEdit, "unistation_keyin")
+
+    def keyin_command_scope(doc):
+        present = {}
+        start()
+        present["line"] = keyin_field() is not None
+        assert present["line"]
+        gui.cancel()
+        wire_start()
+        present["wire"] = keyin_field() is not None
+        assert present["wire"]
+        gui.cancel()
+        circle_start()
+        present["circle"] = keyin_field() is not None
+        assert present["circle"]
+        gui.cancel()
+        arc_start(False)
+        present["arc"] = keyin_field() is not None
+        assert present["arc"] is False
+        gui.cancel()
+        objects = transform_fixture(doc)
+        transform_start(False)
+        present["move"] = keyin_field() is not None
+        assert present["move"] is False
+        gui.cancel()
+        Gui.Selection.clearSelection()
+        for obj in objects:
+            Gui.Selection.addSelection(obj)
+        transform_start(True)
+        present["copy"] = keyin_field() is not None
+        assert present["copy"] is False
+        gui.cancel()
+        Gui.Selection.clearSelection()
+        return present
+
+    def wire_preview_points():
+        backend = gui._session.backend
+        count = int(backend.lines.numVertices[0])
+        values = backend.coords.point.getValues()
+        return [[float(values[index][0]), float(values[index][1]), float(values[index][2])]
+                for index in range(count)]
+
+    def wire_keyin_relative_finish_undo(doc):
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        wire_start()
+        keyin_submit("abs 10; 20; 0", "button")
+        assert not doc.Objects and len(gui._session.points) == 1
+        equal([list(gui._session.points[0])], [[10, 20, 0]])
+        equal([list(gui._session.first)], [[10, 20, 0]])
+        equal([list(AF.getState()["origin"])], [[10, 20, 0]])
+        _, edit, _, error = keyin_widgets()
+        assert edit.text() == "" and error.text() == ""
+        keyin_submit("rel 5 cm; 0; 0")
+        equal([list(point) for point in gui._session.points], [[10, 20, 0], [60, 20, 0]])
+        equal([list(AF.getState()["origin"])], [[60, 20, 0]])
+        assert edit.text() == "" and not doc.Objects
+        keyin_submit("rel 0; 2 cm; 0")
+        expected = [[10, 20, 0], [60, 20, 0], [60, 40, 0]]
+        equal([list(point) for point in gui._session.points], expected)
+        equal([list(gui._session.first)], [[10, 20, 0]])
+        equal([list(AF.getState()["origin"])], [[60, 40, 0]])
+        _, edit, _, error = keyin_widgets()
+        assert edit.text() == "" and error.text() == ""
+        assert not doc.Objects
+        preview = wire_preview_points()
+        equal(preview, expected)
+        wire_button("unistation_finish_wire")
+        assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == 1 and doc.UndoCount == before + 1
+        obj = doc.Objects[0]
+        assert not obj.Closed and not obj.MakeFace and len(obj.Shape.Edges) == 2
+        vertices = points(obj)
+        equal(vertices, expected)
+        doc.undo()
+        assert not doc.Objects
+        doc.redo()
+        assert len(doc.Objects) == 1
+        redone = points(doc.Objects[0])
+        equal(redone, vertices)
+        return {"vertices": vertices, "preview": preview, "undo_before": before,
+                "undo_after": before + 1, "redo": redone, "edges": 2, "face": False}
+
+    def wire_keyin_reject_retry(doc):
+        def state_copy():
+            session = gui._session
+            points = []
+            if session is not None:
+                points = [[float(point.x), float(point.y), float(point.z)]
+                          for point in session.points]
+            origin = AF.getState()["origin"]
+            return {
+                "points": points,
+                "origin": [float(origin[0]), float(origin[1]), float(origin[2])],
+                "objects": [obj.Name for obj in doc.Objects],
+                "session": id(session) if session is not None else None,
+            }
+
+        def rejected(text, message):
+            before = state_copy()
+            keyin_submit(text)
+            _, edit, _, error = keyin_widgets()
+            after = state_copy()
+            error_text = str(error.text())
+            selected = str(edit.selectedText())
+            assert error_text == message
+            assert selected == text
+            assert after["points"] == before["points"]
+            assert after["origin"] == before["origin"]
+            assert after["objects"] == before["objects"]
+            assert after["session"] == before["session"] and after["session"] is not None
+            return {"before": before, "after": after, "error": error_text, "selected": selected}
+
+        wire_start()
+        no_base = rejected(
+            "rel 1; 0; 0",
+            "Сначала задайте абсолютную точку или выберите точку мышью")
+        bad_format = rejected(
+            "abs 1; 2",
+            "Нужно указать ровно три координаты через точку с запятой")
+        keyin_submit("abs 10; 0; 0")
+        _, edit, _, _ = keyin_widgets()
+        assert len(gui._session.points) == 1 and edit.text() == ""
+        duplicate = rejected("rel 0; 0; 0", "Choose a different next point.")
+        keyin_submit("abs 20; 0; 0")
+        assert len(gui._session.points) == 2
+        early_close = rejected(
+            "abs 10; 0; 0", "A closed contour needs at least three points.")
+        keyin_submit("abs 20; 5; 0")
+        _, edit, _, _ = keyin_widgets()
+        assert len(gui._session.points) == 3 and not doc.Objects and edit.text() == ""
+        wire_button("unistation_finish_wire")
+        assert gui._session is None and len(doc.Objects) == 1
+        vertices = points(doc.Objects[0])
+        equal(vertices, [[10, 0, 0], [20, 0, 0], [20, 5, 0]])
+        return {
+            "no_base": no_base,
+            "bad_format": bad_format,
+            "duplicate": duplicate,
+            "early_close": early_close,
+            "vertices": vertices,
+        }
+
+    def wire_keyin_close(doc):
+        def closed_wire(expected):
+            assert gui._session is None and not AF.isActive()
+            obj = doc.Objects[-1]
+            assert obj.Closed and obj.Shape.isClosed() and not obj.MakeFace
+            assert len(obj.Shape.Edges) == 3 and len(obj.Points) == 3
+            vertices = points(obj)
+            equal(vertices, expected)
+            assert len({tuple(vertex) for vertex in vertices}) == 3
+            return vertices
+
+        wire_start()
+        keyin_submit("abs 0; 0; 0")
+        keyin_submit("abs 10; 0; 0")
+        keyin_submit("abs 10; 5; 0")
+        assert not doc.Objects and len(gui._session.points) == 3
+        wire_button("unistation_close_contour")
+        by_button = closed_wire([[0, 0, 0], [10, 0, 0], [10, 5, 0]])
+        wire_start()
+        keyin_submit("abs 0; 0; 0")
+        keyin_submit("abs 20; 0; 0")
+        keyin_submit("abs 20; 8; 0")
+        assert len(doc.Objects) == 1 and len(gui._session.points) == 3
+        keyin_submit("abs 0; 0; 0")
+        by_text = closed_wire([[0, 0, 0], [20, 0, 0], [20, 8, 0]])
+        assert len(doc.Objects) == 2
+        return {"button": by_button, "text": by_text, "objects": 2}
+
+    def wire_keyin_escape(doc):
+        wire_start()
+        keyin_submit("abs 0; 0; 0")
+        keyin_submit("abs 12; 0; 0")
+        assert len(gui._session.points) == 2 and not doc.Objects
+        _, edit, _, _ = keyin_widgets()
+        edit.window().activateWindow()
+        wait()
+        edit.setFocus()
+        assert QtWidgets.QApplication.focusWidget() is edit, "Wire key-in field did not receive focus"
+        QTest.keyClick(edit, QtCore.Qt.Key_Escape)
+        wait()
+        assert gui._session is None and not AF.isActive() and not doc.Objects
+        wire_start()
+        keyin_submit("abs 0; 0; 0")
+        keyin_submit("abs 8; 3; 0")
+        assert len(gui._session.points) == 2 and not doc.Objects
+        action("FinishLine")
+        assert gui._session is None and not AF.isActive() and len(doc.Objects) == 1
+        obj = doc.Objects[0]
+        assert not obj.Closed and not obj.MakeFace and len(obj.Shape.Edges) == 1
+        vertices = points(obj)
+        equal(vertices, [[0, 0, 0], [8, 3, 0]])
+        return {"escaped_objects": 0, "finished_vertices": vertices, "edges": 1}
+
+    def wire_keyin_after_mouse(doc):
+        click = App.Vector(-10, -5, 0)
+        wire_start()
+        frame(True)
+        mouse_at(click, True)
+        assert gui._session is not None and len(gui._session.points) == 1 and not doc.Objects
+        accepted = (float(gui._session.points[0].x), float(gui._session.points[0].y),
+                    float(gui._session.points[0].z))
+        mouse_error = (App.Vector(*accepted) - click).Length
+        assert mouse_error < 1, accepted
+        keyin_submit("rel 0; 5; 0")
+        keyin_submit("rel 3; 0; 0")
+        expected = [list(accepted),
+                    [accepted[0], accepted[1] + 5.0, accepted[2]],
+                    [accepted[0] + 3.0, accepted[1] + 5.0, accepted[2]]]
+        equal([list(point) for point in gui._session.points], expected)
+        equal([list(gui._session.first)], [list(accepted)])
+        assert not doc.Objects
+        equal(wire_preview_points(), expected)
+        wire_button("unistation_finish_wire")
+        assert gui._session is None and not AF.isActive() and len(doc.Objects) == 1
+        vertices = points(doc.Objects[0])
+        equal(vertices, expected)
+        return {"target": [-10.0, -5.0, 0.0], "accepted_first": list(accepted),
+                "mouse_error": mouse_error, "vertices": vertices}
+
+    def wire_mouse_after_keyin(doc):
+        click = App.Vector(10, 5, 0)
+        wire_start()
+        frame(True)
+        keyin_submit("abs -10; -10; 0")
+        equal([list(gui._session.points[0])], [[-10, -10, 0]])
+        mouse_at(click, True)
+        assert len(gui._session.points) == 2 and not doc.Objects
+        second = (float(gui._session.points[1].x), float(gui._session.points[1].y),
+                  float(gui._session.points[1].z))
+        mouse_error = (App.Vector(*second) - click).Length
+        assert mouse_error < 1, second
+        assert (App.Vector(*second) - gui._session.points[0]).Length > 1
+        equal(wire_preview_points(), [[-10, -10, 0], list(second)])
+        keyin_submit("rel 0; 4; 0")
+        expected = [[-10, -10, 0], list(second),
+                    [second[0], second[1] + 4.0, second[2]]]
+        equal([list(point) for point in gui._session.points], expected)
+        assert len(gui._session.points) == 3 and not doc.Objects
+        equal(wire_preview_points(), expected)
+        wire_button("unistation_finish_wire")
+        assert gui._session is None and not AF.isActive() and len(doc.Objects) == 1
+        vertices = points(doc.Objects[0])
+        equal(vertices, expected)
+        assert len({tuple(vertex) for vertex in vertices}) == 3
+        return {"accepted_second": list(second), "mouse_error": mouse_error,
+                "vertices": vertices, "objects": 1}
+
+    def wire_keyin_tilted_world(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                            App.Rotation(App.Vector(1, 0, 0), 30)))
+        wire_start()
+        expected = [[10, 12, 40], [17, 22, 45], [4, 8, 30]]
+        keyin_submit("abs 10; 12; 40")
+        keyin_submit("abs 17; 22; 45")
+        keyin_submit("abs 4; 8; 30")
+        assert not doc.Objects
+        equal([list(point) for point in gui._session.points], expected)
+        wire_button("unistation_finish_wire")
+        assert gui._session is None and len(doc.Objects) == 1
+        vertices = points(doc.Objects[0])
+        equal(vertices, expected)
+        return {"vertices": vertices, "plane": "tilted"}
+
+    def wire_keyin_lifecycle(doc):
+        def point_copy(session):
+            return [[float(point.x), float(point.y), float(point.z)]
+                    for point in session.points]
+
+        def origin_copy():
+            origin = AF.getState()["origin"]
+            return [float(origin[0]), float(origin[1]), float(origin[2])]
+
+        def object_copy():
+            return [obj.Name for obj in doc.Objects]
+
+        wire_start()
+        stale_panel, _, _, _ = keyin_widgets()
+        keyin_submit("abs 1; 2; 3")
+        assert len(gui._session.points) == 1
+        gui.cancel()
+        stale_panel.apply_coordinates()
+        assert gui._session is None and not AF.isActive() and not doc.Objects
+        wire_start()
+        keyin_submit("abs 7; 8; 9")
+        _, edit, _, _ = keyin_widgets()
+        pending = "abs 4; 5; 6"
+        edit.setText(pending)
+        assert edit.text() == pending
+        session = gui._session
+        before_points = point_copy(session)
+        before_origin = origin_copy()
+        before_objects = object_copy()
+        before_text = str(edit.text())
+        stale_panel.apply_coordinates()
+        after_points = point_copy(gui._session)
+        after_origin = origin_copy()
+        after_objects = object_copy()
+        after_text = str(edit.text())
+        same_session = gui._session is session
+        assert same_session and gui._session.valid() and AF.isActive()
+        assert after_points == before_points
+        assert after_origin == before_origin
+        assert after_objects == before_objects
+        assert after_text == before_text
+        edit.window().activateWindow()
+        wait()
+        edit.setFocus()
+        focused = QtWidgets.QApplication.focusWidget() is edit
+        assert focused, "Wire key-in field did not receive focus"
+        App.closeDocument(doc.Name)
+        QTest.qWait(250)
+        released = gui._session is None and not AF.isActive()
+        assert released
+        return {
+            "before_points": before_points,
+            "after_points": after_points,
+            "before_origin": before_origin,
+            "after_origin": after_origin,
+            "before_text": before_text,
+            "after_text": after_text,
+            "same_session": same_session,
+            "focused_before_close": focused,
+            "released": released,
+        }
+
+    def wire_keyin_return_vs_smart_lock(doc):
+        wire_start()
+        keyin_submit("abs 1; 2; 3")
+        assert len(gui._session.points) == 1 and not doc.Objects
+        assert gui._session is not None and AF.isActive()
+        _, edit, _, error = keyin_widgets()
+        assert edit.text() == "" and error.text() == ""
+        enter((5, 7, 0))
+        QTest.keyClick(fields()[0], QtCore.Qt.Key_Return)
+        wait()
+        assert len(gui._session.points) == 1 and not doc.Objects
+        assert gui._session is not None and AF.isActive()
+        equal([list(gui._session.points[0])], [[1, 2, 3]])
+        lock_state = AF.getState()["locks"]
+        assert any(bool(value) for value in lock_state.values()), lock_state
+        locks = {str(name): bool(value) for name, value in lock_state.items()}
+        AF.clearLocks()
+        return {"points": 1, "objects": 0, "open": True, "locks": locks}
+
+    def circle_keyin_units_undo(doc):
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        circle_start()
+        keyin_submit("abs 1 cm;20 mm;0", "button")
+        equal([list(gui._session.first)], [[10, 20, 0]])
+        equal([list(AF.getState()["origin"])], [[10, 20, 0]])
+        _, edit, _, error = keyin_widgets()
+        wait()
+        focused = QtWidgets.QApplication.focusWidget() is edit
+        assert edit.text() == "", edit.text()
+        assert error.text() == "", error.text()
+        assert focused, "Circle key-in field did not keep focus"
+        assert not doc.Objects and doc.UndoCount == before
+        keyin_submit("rel 3;4;0")
+        assert len(doc.Objects) == 1 and doc.UndoCount == before + 1
+        obj = doc.Objects[0]
+        check_circle(obj, App.Vector(10, 20, 0), 5)
+        curve = obj.Shape.Edges[0].Curve
+        radius = float(curve.Radius)
+        doc.undo()
+        assert not doc.Objects
+        doc.redo()
+        assert len(doc.Objects) == 1
+        check_circle(doc.Objects[0], App.Vector(10, 20, 0), 5)
+        return {"center": [10.0, 20.0, 0.0], "radius": radius, "undo_before": before,
+                "undo_after": before + 1, "focused_after_center": focused, "face": False}
+
+    def circle_keyin_reject_retry(doc):
+        def state_copy():
+            session = gui._session
+            center = None
+            if session is not None and session.first is not None:
+                center = [float(session.first.x), float(session.first.y), float(session.first.z)]
+            origin = AF.getState()["origin"]
+            return {
+                "center": center,
+                "origin": [float(origin[0]), float(origin[1]), float(origin[2])],
+                "objects": [obj.Name for obj in doc.Objects],
+                "session": id(session) if session is not None else None,
+            }
+
+        def rejected(text, message):
+            before = state_copy()
+            keyin_submit(text)
+            _, edit, _, error = keyin_widgets()
+            after = state_copy()
+            error_text = str(error.text())
+            selected = str(edit.selectedText())
+            assert error_text == message
+            assert selected == text
+            assert after == before
+            assert after["session"] is not None
+            return {"before": before, "after": after, "error": error_text, "selected": selected}
+
+        circle_start()
+        no_base = rejected(
+            "rel 1; 0; 0",
+            "Сначала задайте абсолютную точку или выберите точку мышью")
+        bad_format = rejected(
+            "abs 1; 2",
+            "Нужно указать ровно три координаты через точку с запятой")
+        off_plane = rejected(
+            "abs 1; 2; 3",
+            "Choose a point in the working plane captured at command start.")
+        keyin_submit("abs 1; 2; 0")
+        _, edit, _, _ = keyin_widgets()
+        assert edit.text() == ""
+        equal([list(gui._session.first)], [[1, 2, 0]])
+        zero_radius = rejected("rel 0; 0; 0", "Choose a finite, non-zero radius.")
+        off_plane_rel = rejected(
+            "rel 0; 0; 1",
+            "Choose a point in the working plane captured at command start.")
+        keyin_submit("rel 3; 4; 0")
+        assert len(doc.Objects) == 1
+        check_circle(doc.Objects[0], App.Vector(1, 2, 0), 5)
+        radius = float(doc.Objects[0].Shape.Edges[0].Curve.Radius)
+        return {
+            "no_base": no_base,
+            "bad_format": bad_format,
+            "off_plane": off_plane,
+            "zero_radius": zero_radius,
+            "off_plane_rel": off_plane_rel,
+            "radius": radius,
+        }
+
+    def circle_keyin_after_mouse(doc):
+        click = App.Vector(-10, -5, 0)
+        circle_start()
+        frame(True)
+        mouse_at(click, True)
+        assert gui._session is not None and gui._session.first is not None and not doc.Objects
+        accepted = (float(gui._session.first.x), float(gui._session.first.y),
+                    float(gui._session.first.z))
+        mouse_error = (App.Vector(*accepted) - click).Length
+        assert mouse_error < 1, accepted
+        keyin_submit("rel 3; 4; 0")
+        assert len(doc.Objects) == 1
+        check_circle(doc.Objects[0], App.Vector(*accepted), 5)
+        radius = float(doc.Objects[0].Shape.Edges[0].Curve.Radius)
+        return {"target": [-10.0, -5.0, 0.0], "accepted_center": list(accepted),
+                "mouse_error": mouse_error, "radius": radius, "objects": 1}
+
+    def circle_mouse_after_keyin(doc):
+        target = App.Vector(-7, -1, 0)
+        circle_start()
+        frame(True)
+        keyin_submit("abs -10; -5; 0")
+        equal([list(gui._session.first)], [[-10, -5, 0]])
+        assert not doc.Objects
+        mouse_at(target, False)
+        count = int(gui._session.backend.lines.numVertices[0])
+        assert count == 129 and not doc.Objects
+        values = gui._session.backend.coords.point.getValues()
+        preview_first = [float(values[0][0]), float(values[0][1]), float(values[0][2])]
+        preview_radius = (App.Vector(*preview_first) - gui._session.first).Length
+        mouse_at(target, True)
+        assert len(doc.Objects) == 1 and gui._session is None and not AF.isActive()
+        obj = doc.Objects[0]
+        curve = obj.Shape.Edges[0].Curve
+        center = [float(curve.Center.x), float(curve.Center.y), float(curve.Center.z)]
+        radius = float(curve.Radius)
+        equal([center], [[-10, -5, 0]])
+        assert obj.Shape.isValid() and not obj.MakeFace and len(obj.Shape.Edges) == 1
+        assert abs(radius - 5) < 1, radius
+        return {"center": center, "radius": radius, "preview_vertices": count,
+                "preview_first": preview_first, "preview_radius": preview_radius}
+
+    def circle_keyin_tilted_world(doc):
+        def xyz(vector):
+            return [float(vector.x), float(vector.y), float(vector.z)]
+
+        def formatted(vector):
+            return "abs {0:.12f}; {1:.12f}; {2:.12f}".format(vector.x, vector.y, vector.z)
+
+        def state_copy():
+            session = gui._session
+            center = None
+            if session is not None and session.first is not None:
+                center = xyz(session.first)
+            origin = AF.getState()["origin"]
+            return {
+                "center": center,
+                "origin": [float(origin[0]), float(origin[1]), float(origin[2])],
+                "objects": [obj.Name for obj in doc.Objects],
+                "session": id(session) if session is not None else None,
+            }
+
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                            App.Rotation(App.Vector(1, 0, 0), 30)))
+        origin = App.Vector(wp.position)
+        u, v, axis = App.Vector(wp.u), App.Vector(wp.v), App.Vector(wp.axis)
+        saved = {"origin": xyz(origin), "u": xyz(u), "v": xyz(v), "axis": xyz(axis)}
+        circle_start()
+        keyin_submit(formatted(origin))
+        equal([list(gui._session.first)], [saved["origin"]])
+        before = state_copy()
+        keyin_submit(formatted(origin + axis))
+        _, edit, _, error = keyin_widgets()
+        after = state_copy()
+        assert str(error.text()) == "Choose a point in the working plane captured at command start."
+        assert str(edit.selectedText()) == formatted(origin + axis)
+        assert after == before and not doc.Objects
+        keyin_submit(formatted(origin + u * 3 + v * 4))
+        assert len(doc.Objects) == 1
+        check_circle(doc.Objects[0], origin, 5, axis)
+        curve = doc.Objects[0].Shape.Edges[0].Curve
+        return {
+            "plane": saved,
+            "rejected_before": before,
+            "rejected_after": after,
+            "center": xyz(curve.Center),
+            "radius": float(curve.Radius),
+            "normal": xyz(curve.Axis),
+        }
+
+    def circle_keyin_escape(doc):
+        def escape_focused():
+            _, edit, _, _ = keyin_widgets()
+            edit.window().activateWindow()
+            wait()
+            edit.setFocus()
+            focused = QtWidgets.QApplication.focusWidget() is edit
+            assert focused, "Circle key-in field did not receive focus"
+            QTest.keyClick(edit, QtCore.Qt.Key_Escape)
+            wait()
+            assert gui._session is None and not AF.isActive() and not doc.Objects
+            return focused
+
+        circle_start()
+        focused_before_center = escape_focused()
+        circle_start()
+        keyin_submit("abs 4; 5; 0")
+        assert gui._session.first is not None and not doc.Objects
+        focused_after_center = escape_focused()
+        circle_start()
+        keyin_submit("abs 4; 5; 0")
+        assert gui._session.first is not None and not doc.Objects
+        action("FinishLine")
+        assert gui._session is None and not AF.isActive() and not doc.Objects
+        return {"focused_before_center": focused_before_center,
+                "focused_after_center": focused_after_center, "objects": len(doc.Objects)}
+
+    def circle_keyin_lifecycle(doc):
+        def center_copy(session):
+            if session is None or session.first is None:
+                return None
+            return [float(session.first.x), float(session.first.y), float(session.first.z)]
+
+        def origin_copy():
+            origin = AF.getState()["origin"]
+            return [float(origin[0]), float(origin[1]), float(origin[2])]
+
+        def object_copy():
+            return [obj.Name for obj in doc.Objects]
+
+        circle_start()
+        stale_panel, _, _, _ = keyin_widgets()
+        keyin_submit("abs 1; 2; 0")
+        assert gui._session.first is not None
+        gui.cancel()
+        stale_panel.apply_coordinates()
+        assert gui._session is None and not AF.isActive() and not doc.Objects
+        circle_start()
+        keyin_submit("abs 1; 2; 0")
+        _, edit, _, _ = keyin_widgets()
+        pending = "abs 8; 9; 0"
+        edit.setText(pending)
+        assert edit.text() == pending
+        session = gui._session
+        before_center = center_copy(session)
+        before_origin = origin_copy()
+        before_objects = object_copy()
+        before_text = str(edit.text())
+        stale_panel.apply_coordinates()
+        after_center = center_copy(gui._session)
+        after_origin = origin_copy()
+        after_objects = object_copy()
+        after_text = str(edit.text())
+        same_session = gui._session is session
+        assert same_session and gui._session.valid() and AF.isActive()
+        assert after_center == before_center
+        assert after_origin == before_origin
+        assert after_objects == before_objects
+        assert after_text == before_text
+        edit.window().activateWindow()
+        wait()
+        edit.setFocus()
+        focused = QtWidgets.QApplication.focusWidget() is edit
+        assert focused, "Circle key-in field did not receive focus"
+        App.closeDocument(doc.Name)
+        QTest.qWait(250)
+        released = gui._session is None and not AF.isActive()
+        assert released
+        return {
+            "before_center": before_center,
+            "after_center": after_center,
+            "before_origin": before_origin,
+            "after_origin": after_origin,
+            "before_text": before_text,
+            "after_text": after_text,
+            "same_session": same_session,
+            "focused_before_close": focused,
+            "released": released,
+        }
+
+    def circle_keyin_return_vs_smart_lock(doc):
+        circle_start()
+        keyin_submit("abs 1; 2; 0")
+        assert not doc.Objects and gui._session is not None and AF.isActive()
+        equal([list(gui._session.first)], [[1, 2, 0]])
+        _, edit, _, error = keyin_widgets()
+        assert edit.text() == "" and error.text() == ""
+        enter((5, 7, 0))
+        QTest.keyClick(fields()[0], QtCore.Qt.Key_Return)
+        wait()
+        assert not doc.Objects and gui._session is not None and AF.isActive()
+        equal([list(gui._session.first)], [[1, 2, 0]])
+        lock_state = AF.getState()["locks"]
+        assert any(bool(value) for value in lock_state.values()), lock_state
+        locks = {str(name): bool(value) for name, value in lock_state.items()}
+        AF.clearLocks()
+        return {"center": [1.0, 2.0, 0.0], "objects": 0, "open": True, "locks": locks}
+
+    def keyin_focus_probe(doc):
+        import time
+
+        def xyz(value):
+            if value is None:
+                return None
+            try:
+                return [float(value.x), float(value.y), float(value.z)]
+            except AttributeError:
+                return [float(value[0]), float(value[1]), float(value[2])]
+
+        def axisflow_origin():
+            try:
+                origin = AF.getState()["origin"]
+                return [float(origin[0]), float(origin[1]), float(origin[2])]
+            except Exception as exc:
+                return {"read_error": type(exc).__name__ + ": " + str(exc)}
+
+        def describe(widget):
+            if widget is None:
+                return None
+            try:
+                return {
+                    "class_name": str(widget.metaObject().className()),
+                    "object_name": str(widget.objectName()),
+                    "window_title": str(widget.windowTitle()),
+                }
+            except RuntimeError:
+                return {"destroyed": True}
+
+        def session_state():
+            session = gui._session
+            state = {"axisflow_origin": axisflow_origin()}
+            try:
+                state["axisflow_active"] = bool(AF.isActive())
+            except Exception as exc:
+                state["axisflow_active"] = {"read_error": type(exc).__name__}
+            if session is None:
+                state.update({"present": False, "type": None, "closed": None,
+                              "first": None, "origin": None})
+                return state
+            try:
+                state.update({
+                    "present": True,
+                    "type": type(session).__name__,
+                    "closed": bool(session.closed),
+                    "first": xyz(session.first),
+                    "origin": xyz(session.origin),
+                })
+            except RuntimeError:
+                state["read_error"] = "RuntimeError"
+            return state
+
+        def run_variant(name, starter, method):
+            events = []
+            phase = {"name": "start"}
+            index = {"n": 0}
+            started = time.monotonic()
+            connected = {"value": False}
+            widgets = {"edit": None, "error": None}
+            application = QtWidgets.QApplication.instance()
+
+            def clock():
+                now = time.monotonic()
+                return {"monotonic": now, "dt_ms": (now - started) * 1000.0}
+
+            def on_focus(old, new):
+                index["n"] += 1
+                entry = {"n": index["n"], "phase": phase["name"]}
+                entry.update(clock())
+                try:
+                    entry["old"] = describe(old)
+                    entry["new"] = describe(new)
+                    entry["active_window"] = describe(application.activeWindow())
+                    entry["session"] = session_state()
+                except Exception as exc:
+                    entry["read_error"] = type(exc).__name__ + ": " + str(exc)
+                events.append(entry)
+
+            def snapshot(label):
+                try:
+                    focus = application.focusWidget()
+                except RuntimeError:
+                    focus = None
+                try:
+                    active = application.activeWindow()
+                except RuntimeError:
+                    active = None
+                edit = widgets["edit"]
+                error = widgets["error"]
+                has_focus = None
+                text = None
+                error_text = None
+                focus_is_edit = None
+                try:
+                    if edit is not None:
+                        has_focus = bool(edit.hasFocus())
+                        text = str(edit.text())
+                        focus_is_edit = focus is edit
+                except RuntimeError:
+                    has_focus = None
+                    text = None
+                    focus_is_edit = None
+                try:
+                    if error is not None:
+                        error_text = str(error.text())
+                except RuntimeError:
+                    error_text = None
+                described = describe(focus)
+                return {
+                    "label": label,
+                    "phase": phase["name"],
+                    "focus": described,
+                    "active_window": describe(active),
+                    "edit_has_focus": has_focus,
+                    "focus_is_edit": focus_is_edit,
+                    "focus_object_name": described.get("object_name") if isinstance(described, dict) else None,
+                    "text": text,
+                    "error": error_text,
+                    "session": session_state(),
+                    "objects": [obj.Name for obj in doc.Objects],
+                    "event_count": index["n"],
+                    **clock(),
+                }
+
+            result = {
+                "name": name,
+                "method": method,
+                "input_text": "abs 10;20;0",
+                "observation_completed": False,
+                "focus_contract_met": False,
+            }
+            try:
+                starter()
+                _, edit, apply, error = keyin_widgets()
+                widgets["edit"] = edit
+                widgets["error"] = error
+                application.focusChanged.connect(on_focus)
+                connected["value"] = True
+                phase["name"] = "prepare"
+                edit.window().activateWindow()
+                wait()
+                edit.setFocus()
+                assert application.focusWidget() is edit, "Key-in field did not receive focus"
+                phase["name"] = "typing"
+                QTest.keyClicks(edit, "abs 10;20;0")
+                phase["name"] = "before_confirm"
+                before = snapshot("before_confirm")
+                phase["name"] = "confirm"
+                if method == "button":
+                    QTest.mouseClick(apply, QtCore.Qt.LeftButton)
+                elif method == "return":
+                    QTest.keyClick(edit, QtCore.Qt.Key_Return)
+                else:
+                    raise ValueError("Unknown focus probe method: " + method)
+                phase["name"] = "after_confirm"
+                after = snapshot("after_confirm")
+                samples = []
+                for label in ("wait_100", "wait_200", "wait_300"):
+                    phase["name"] = label
+                    wait()
+                    samples.append(snapshot(label))
+                final = samples[-1]
+                result.update({
+                    "before_confirm": before,
+                    "after_confirm": after,
+                    "samples": samples,
+                    "timeline": events,
+                    "focus_contract_met": bool(final["focus_is_edit"])
+                    and final["focus_object_name"] == "unistation_keyin",
+                })
+                accepted = after["session"]
+                assert accepted["present"] and not accepted["closed"], accepted
+                assert accepted["type"] in ("LineSession", "CircleSession"), accepted
+                equal([accepted["first"]], [[10, 20, 0]])
+                assert after["objects"] == [], after["objects"]
+                assert final["session"]["present"] and not final["session"]["closed"], final["session"]
+                equal([final["session"]["first"]], [[10, 20, 0]])
+                assert final["objects"] == [], final["objects"]
+                result["observation_completed"] = True
+            finally:
+                if connected["value"]:
+                    application.focusChanged.disconnect(on_focus)
+                    connected["value"] = False
+                if gui._session is not None:
+                    gui.cancel()
+                phase["name"] = "after_cancel"
+                result["after_cancel"] = snapshot("after_cancel")
+                path = output_dir / "keyin-focus-probe.json"
+                stored = []
+                if path.exists():
+                    stored = json.loads(path.read_text(encoding="utf-8"))
+                stored.append(result)
+                path.write_text(json.dumps(stored, indent=2), encoding="utf-8")
+            return result
+
+        variants = []
+        for name, starter, method in (
+                ("line_button", start, "button"),
+                ("line_enter", start, "return"),
+                ("circle_button", circle_start, "button"),
+                ("circle_enter", circle_start, "return")):
+            variant = run_variant(name, starter, method)
+            assert variant["observation_completed"]
+            assert gui._session is None
+            assert not variant["after_cancel"]["session"]["present"]
+            assert variant["after_cancel"]["objects"] == []
+            variants.append(variant)
+        return {
+            "observation_completed": True,
+            "focus_contract_met": all(item["focus_contract_met"] for item in variants),
+            "circle_feature_claim": "not_claimed",
+            "focus_contract_definition":
+                "wait_300 focus_is_edit and focus object name unistation_keyin; measurement only",
+            "variants": variants,
+        }
+
+    def wire_points(values=((0, 0, 0), (10, 0, 0), (0, 5, 0))):
+        for value in values:
+            enter(value)
+            action("ConfirmPoint")
+
+    def wire_button(name):
+        button = gui._session.backend.panel.form.findChild(QtWidgets.QPushButton, name)
+        assert button is not None
+        QTest.mouseClick(button, QtCore.Qt.LeftButton)
+        wait()
+
+    def wire_open(doc):
+        doc.UndoMode = 1
+        wire_start()
+        wire_points()
+        assert not doc.Objects and len(gui._session.points) == 3
+        assert gui._session.backend.lines.numVertices[0] >= 3
+        action("FinishLine")
+        assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == 1
+        obj = doc.Objects[0]
+        equal(points(obj), [[0, 0, 0], [10, 0, 0], [10, 5, 0]])
+        assert not obj.Closed and not obj.MakeFace
+        assert abs(obj.Shape.Length - 15) < 1e-6
+        assert doc.UndoCount == 1
+        doc.undo()
+        assert not doc.Objects
+        doc.redo()
+        assert len(doc.Objects) == 1 and len(doc.Objects[0].Shape.Edges) == 2
+        path = str(output_dir / "wire.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        reopened = App.openDocument(path)
+        assert len(reopened.Objects[0].Shape.Edges) == 2
+
+    def wire_closed(doc):
+        wire_start()
+        wire_points()
+        wire_button("unistation_close_contour")
+        obj = doc.Objects[0]
+        assert obj.Closed and obj.Shape.isClosed() and not obj.MakeFace
+        assert len(obj.Shape.Edges) == 3 and len(obj.Points) == 3
+        assert gui._session is None and not AF.isActive()
+
+    def wire_pick_first(doc):
+        wire_start()
+        frame(True)
+        wire_points(((0, 0, 0), (10, 0, 0), (10, 5, 0), (0, 0, 0)))
+        assert len(doc.Objects) == 1 and doc.Objects[0].Closed
+        assert len(doc.Objects[0].Points) == 3
+
+    def wire_cancel(doc):
+        wire_start()
+        wire_points()
+        action("CancelCommand")
+        assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def wire_mouse_snap(doc):
+        import Draft
+        import DraftTools
+        reference = Draft.make_wire([App.Vector(-20, 0, 0), App.Vector(20, 0, 0),
+                                     App.Vector(20, 20, 0)], face=False)
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Endpoint")
+        wire_start()
+        for point in (App.Vector(-20, 0, 0), App.Vector(20, 0, 0), App.Vector(20, 20, 0)):
+            mouse_at(point, True)
+        assert len(doc.Objects) == 1
+        wire_button("unistation_finish_wire")
+        created = next(obj for obj in doc.Objects if obj is not reference)
+        equal(points(created), [[-20, 0, 0], [20, 0, 0], [20, 20, 0]])
+        assert len(created.Shape.Edges) == 2 and not AF.isActive()
+
+    def wire_short(doc):
+        wire_start()
+        wire_points(((0, 0, 0),))
+        wire_button("unistation_close_contour")
+        assert gui._session is not None and not doc.Objects
+        action("FinishLine")
+        assert not doc.Objects and gui._session is None
+
+    def wire_plane(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                          App.Rotation(App.Vector(1, 0, 0), 30)))
+        expected = [list(wp.position), list(wp.position + 10 * wp.u),
+                    list(wp.position + 10 * wp.u + 5 * wp.v)]
+        wire_start()
+        wire_points()
+        wire_button("unistation_finish_wire")
+        equal(points(doc.Objects[0]), expected)
+
+    def wire_lifecycle(doc):
+        wire_start()
+        wire_points()
+        other = App.newDocument("WireOther")
+        QTest.qWait(250)
+        assert gui._session is None and not doc.Objects and not other.Objects
+        App.setActiveDocument(doc.Name)
+        wire_start()
+        wire_points()
+        Gui.activateWorkbench("DraftWorkbench")
+        wait()
+        assert gui._session is None and not doc.Objects
+        Gui.activateWorkbench("UniStationWorkbench")
+        wire_start()
+        wire_points()
+        App.closeDocument(doc.Name)
+        wait()
+        assert gui._session is None and not AF.isActive()
+
+    def wire_failure(doc):
+        import Draft
+        original = Draft.make_wire
+        def fail(*args, **kwargs):
+            original(*args, **kwargs)
+            raise RuntimeError("intentional wire rollback test")
+        wire_start()
+        wire_points()
+        Draft.make_wire = fail
+        try:
+            action("FinishLine")
+        finally:
+            Draft.make_wire = original
+        assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def circle_start():
+        Gui.runCommand("UniStation_Circle")
+        AF.setMode("rect")
+        frame(False)
+        wait()
+
+    def check_circle(obj, center, radius, normal=App.Vector(0, 0, 1)):
+        assert obj.Shape.isValid() and len(obj.Shape.Edges) == 1 and not obj.MakeFace
+        curve = obj.Shape.Edges[0].Curve
+        equal([list(curve.Center)], [list(center)])
+        assert abs(curve.Radius - radius) < 1e-6, curve.Radius
+        assert curve.Axis.cross(normal).Length < 1e-6
+        assert abs(obj.Shape.Length - 2 * math.pi * radius) < 1e-6
+        assert gui._session is None and not AF.isActive()
+
+    def circle_local(doc):
+        doc.UndoMode = 1
+        circle_start()
+        enter((1, 2, 0))
+        action("ConfirmPoint")
+        enter((3, 4, 0))
+        wait()
+        backend = gui._session.backend
+        assert backend.lines.numVertices[0] == 129
+        assert not doc.Objects
+        action("ConfirmPoint")
+        check_circle(doc.Objects[0], App.Vector(1, 2, 0), 5)
+        assert doc.UndoCount == 1
+        doc.undo()
+        assert not doc.Objects
+        doc.redo()
+        check_circle(doc.Objects[0], App.Vector(1, 2, 0), 5)
+        path = str(output_dir / "circle.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        reopened = App.openDocument(path)
+        check_circle(reopened.Objects[0], App.Vector(1, 2, 0), 5)
+
+    def circle_world(doc):
+        circle_start()
+        frame(True)
+        wire_points(((10, 20, 0), (13, 24, 0)))
+        check_circle(doc.Objects[0], App.Vector(10, 20, 0), 5)
+
+    def circle_plane(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                          App.Rotation(App.Vector(1, 0, 0), 30)))
+        center, normal = App.Vector(wp.position), App.Vector(wp.axis)
+        circle_start()
+        wire_points(((0, 0, 0), (3, 4, 0)))
+        check_circle(doc.Objects[0], center, 5, normal)
+
+    def circle_polar(doc):
+        circle_start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        action("ToggleMode")
+        enter((12, 35, 0))
+        action("ConfirmPoint")
+        check_circle(doc.Objects[0], App.Vector(), 12)
+
+    def circle_reject(doc):
+        circle_start()
+        frame(True)
+        enter((0, 0, 2))
+        action("ConfirmPoint")
+        assert gui._session.first is None
+        wire_points(((0, 0, 0), (0, 0, 0), (5, 0, 2)))
+        assert gui._session is not None and not doc.Objects
+        enter((5, 0, 0))
+        action("ConfirmPoint")
+        check_circle(doc.Objects[0], App.Vector(), 5)
+
+    def circle_cancel(doc):
+        for key in ("FinishLine", "CancelCommand"):
+            circle_start()
+            enter((0, 0, 0))
+            action("ConfirmPoint")
+            action(key)
+            assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def circle_mouse(doc):
+        import Draft
+        import DraftTools
+        reference = Draft.make_line(App.Vector(-20, 0, 0), App.Vector(20, 0, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Endpoint")
+        circle_start()
+        mouse_at(App.Vector(-20, 0, 0), True)
+        mouse_at(App.Vector(20, 0, 0), True)
+        obj = next(obj for obj in doc.Objects if obj is not reference)
+        check_circle(obj, App.Vector(-20, 0, 0), 40)
+
+    def circle_lifecycle(doc):
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 01 before first circle_start\n")
+        circle_start()
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 02 after first circle_start\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 03 before center input\n")
+        enter((0, 0, 0))
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 04 after center input\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 05 before ConfirmPoint\n")
+        action("ConfirmPoint")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 06 after ConfirmPoint\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 07 before newDocument\n")
+        other = App.newDocument("CircleOther")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 08 after newDocument\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 09 before qWait(250)\n")
+        QTest.qWait(250)
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 10 after qWait(250)\n")
+        assert gui._session is None and not doc.Objects and not other.Objects
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 11 before setActiveDocument\n")
+        App.setActiveDocument(doc.Name)
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 12 after setActiveDocument\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 13 before second circle_start\n")
+        circle_start()
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 14 after second circle_start\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 15 before activateWorkbench Draft\n")
+        Gui.activateWorkbench("DraftWorkbench")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 16 after activateWorkbench Draft\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 17 before wait after Draft\n")
+        wait()
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 18 after wait after Draft\n")
+        assert gui._session is None and not doc.Objects
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 19 before activateWorkbench UniStation\n")
+        Gui.activateWorkbench("UniStationWorkbench")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 20 after activateWorkbench UniStation\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 21 before third circle_start\n")
+        circle_start()
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 22 after third circle_start\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 23 before closeDocument\n")
+        App.closeDocument(doc.Name)
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 24 after closeDocument\n")
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 25 before last wait\n")
+        wait()
+        App.Console.PrintLog("GROK009_CIRCLE_PHASE 26 after last wait\n")
+        assert gui._session is None and not AF.isActive()
+
+    def circle_failure(doc):
+        import Draft
+        original = Draft.make_circle
+        def fail(*args, **kwargs):
+            original(*args, **kwargs)
+            raise RuntimeError("intentional circle rollback test")
+        circle_start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        Draft.make_circle = fail
+        try:
+            enter((5, 0, 0))
+            action("ConfirmPoint")
+        finally:
+            Draft.make_circle = original
+        assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def arc_start(world=True):
+        Gui.runCommand("UniStation_Arc")
+        AF.setMode("rect")
+        frame(world)
+        wait()
+
+    def check_arc(obj, expected):
+        import Part
+        edge = obj.Shape.Edges[0]
+        reference = Part.Arc(*expected).toShape()
+        assert obj.Shape.isValid() and len(obj.Shape.Edges) == 1 and not obj.MakeFace
+        assert not edge.isClosed()
+        assert abs(edge.Length - reference.Length) < 1e-6, (edge.Length, reference.Length)
+        for p in reference.discretize(Number=17):
+            assert edge.distToShape(Part.Vertex(p))[0] < 1e-6
+        for p in expected:
+            assert edge.distToShape(Part.Vertex(p))[0] < 1e-6
+        assert gui._session is None and not AF.isActive()
+
+    def arc_local(doc):
+        doc.UndoMode = 1
+        arc_start(False)
+        wire_points(((0, 0, 0), (5, 5, 0)))
+        assert not doc.Objects
+        enter((5, -5, 0))
+        assert gui._session.backend.lines.numVertices[0] == 129
+        action("ConfirmPoint")
+        expected = [App.Vector(0, 0, 0), App.Vector(5, 5, 0), App.Vector(10, 0, 0)]
+        check_arc(doc.Objects[0], expected)
+        assert doc.UndoCount == 1
+        doc.undo()
+        assert not doc.Objects
+        doc.redo()
+        check_arc(doc.Objects[0], expected)
+        path = str(output_dir / "arc.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        reopened = App.openDocument(path)
+        check_arc(reopened.Objects[0], expected)
+
+    def arc_directions(doc):
+        for angles in ((0, 45, 90), (0, -45, -90), (0, 180, 270), (0, -180, -270)):
+            # AxisFlow's decimal fields do not accept scientific notation.
+            expected = [App.Vector(round(10*math.cos(math.radians(a)), 8),
+                                   round(10*math.sin(math.radians(a)), 8), 0) for a in angles]
+            arc_start()
+            for p in expected[:2]:
+                enter(tuple(p))
+                action("ConfirmPoint")
+            equal([list(p) for p in gui._session.points], [list(p) for p in expected[:2]])
+            enter(tuple(expected[2]))
+            action("ConfirmPoint")
+            check_arc(doc.Objects[-1], expected)
+
+    def arc_plane(doc):
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                          App.Rotation(App.Vector(1, 0, 0), 30)))
+        expected = [App.Vector(wp.position), wp.position + 5*wp.u + 5*wp.v,
+                    wp.position + 10*wp.u]
+        arc_start(False)
+        wire_points(((0, 0, 0), (5, 5, 0), (5, -5, 0)))
+        check_arc(doc.Objects[0], expected)
+
+    def arc_retry(doc):
+        arc_start()
+        wire_points(((0, 0, 5), (0, 0, 0), (0, 0, 0), (5, 5, 0)))
+        for p in ((0, 0, 0), (10, 10, 0), (10, 0, 5)):
+            enter(p)
+            assert gui._session.backend.lines.numVertices[0] == 0
+            action("ConfirmPoint")
+        assert len(gui._session.points) == 2 and not doc.Objects
+        enter((10, 0, 0))
+        action("ConfirmPoint")
+        check_arc(doc.Objects[0], [App.Vector(), App.Vector(5, 5, 0), App.Vector(10, 0, 0)])
+
+    def arc_cancel(doc):
+        for key in ("FinishLine", "CancelCommand"):
+            arc_start()
+            wire_points(((0, 0, 0), (5, 5, 0)))
+            action(key)
+            assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def arc_mouse(doc):
+        import Draft
+        import DraftTools
+        expected = [App.Vector(), App.Vector(5, 5, 0), App.Vector(10, 0, 0)]
+        reference = Draft.make_wire(expected, face=False)
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Endpoint")
+        arc_start()
+        for p in expected:
+            mouse_at(p, True)
+        obj = next(obj for obj in doc.Objects if obj is not reference)
+        check_arc(obj, expected)
+
+    def arc_lifecycle(doc):
+        arc_start()
+        wire_points(((0, 0, 0), (5, 5, 0)))
+        other = App.newDocument("ArcOther")
+        QTest.qWait(250)
+        assert gui._session is None and not doc.Objects and not other.Objects
+        App.setActiveDocument(doc.Name)
+        arc_start()
+        wire_points(((0, 0, 0), (5, 5, 0)))
+        Gui.activateWorkbench("DraftWorkbench")
+        wait()
+        assert gui._session is None and not doc.Objects
+        Gui.activateWorkbench("UniStationWorkbench")
+        arc_start()
+        wire_points(((0, 0, 0), (5, 5, 0)))
+        App.closeDocument(doc.Name)
+        wait()
+        assert gui._session is None and not AF.isActive()
+
+    def arc_failure(doc):
+        import Draft
+        original = Draft.make_circle
+        def fail(*args, **kwargs):
+            original(*args, **kwargs)
+            raise RuntimeError("intentional arc rollback test")
+        arc_start()
+        wire_points(((0, 0, 0), (5, 5, 0)))
+        Draft.make_circle = fail
+        try:
+            enter((10, 0, 0))
+            action("ConfirmPoint")
+        finally:
+            Draft.make_circle = original
+        assert not doc.Objects and gui._session is None and not AF.isActive()
+
+    def transform_fixture(doc):
+        import Draft
+        line = Draft.make_line(App.Vector(0, 0, 0), App.Vector(10, 0, 0))
+        circle = Draft.make_circle(3, placement=App.Placement(App.Vector(20, 0, 0), App.Rotation()), face=False)
+        doc.recompute()
+        Gui.Selection.clearSelection()
+        for obj in (line, circle):
+            Gui.Selection.addSelection(obj)
+        return line, circle
+
+    def transform_start(copy=False, world=False):
+        Gui.runCommand("UniStation_Copy" if copy else "UniStation_Move")
+        assert gui._session is not None, "Transform did not start"
+        AF.setMode("rect")
+        frame(world)
+        wait()
+        assert gui._session is not None, "Transform guard rejected the fixture"
+
+    def move_local(doc):
+        objects = transform_fixture(doc)
+        initial = [App.Placement(o.Placement) for o in objects]
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        transform_start()
+        enter((1, 2, 0))
+        action("ConfirmPoint")
+        enter((-4.5, 6.25, 2))
+        assert gui._session.backend.ghost.whichChild.getValue() == -3
+        assert all(o.Placement == p for o, p in zip(objects, initial))
+        action("ConfirmPoint")
+        assert gui._session is None and not AF.isActive() and len(doc.Objects) == 2
+        delta = App.Vector(-4.5, 6.25, 2)
+        equal([list(o.Placement.Base) for o in objects], [list(p.Base + delta) for p in initial])
+        assert doc.UndoCount == before + 1
+        doc.undo()
+        equal([list(o.Placement.Base) for o in objects], [list(p.Base) for p in initial])
+        doc.redo()
+        equal([list(o.Placement.Base) for o in objects], [list(p.Base + delta) for p in initial])
+
+    def copy_world(doc):
+        objects = transform_fixture(doc)
+        initial = [App.Placement(o.Placement) for o in objects]
+        doc.UndoMode = 1
+        before = doc.UndoCount
+        transform_start(True, True)
+        wire_points(((10, 20, 0), (15, 27, 3)))
+        assert len(doc.Objects) == 4 and gui._session is None and not AF.isActive()
+        assert all(o.Placement == p for o, p in zip(objects, initial))
+        copies = [o for o in doc.Objects if o not in objects]
+        assert all(hasattr(o, "Proxy") for o in copies)
+        equal([list(o.Placement.Base) for o in copies],
+              [list(p.Base + App.Vector(5, 7, 3)) for p in initial])
+        assert doc.UndoCount == before + 1
+        doc.undo()
+        assert len(doc.Objects) == 2
+        doc.redo()
+        assert len(doc.Objects) == 4
+        path = str(output_dir / "copy.FCStd")
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        reopened = App.openDocument(path)
+        assert len(reopened.Objects) == 4 and all(o.Shape.isValid() for o in reopened.Objects)
+
+    def transform_plane(doc):
+        objects = transform_fixture(doc)
+        initial = [App.Vector(o.Placement.Base) for o in objects]
+        wp = WorkingPlane.get_working_plane()
+        wp.align_to_placement(App.Placement(App.Vector(3, 4, 25),
+                                          App.Rotation(App.Vector(1, 0, 0), 30)))
+        delta = 10*wp.u + 5*wp.v
+        transform_start()
+        wire_points(((0, 0, 0), (10, 5, 0)))
+        equal([list(o.Placement.Base) for o in objects], [list(p+delta) for p in initial])
+
+    def transform_cancel_pending(doc):
+        objects = transform_fixture(doc)
+        initial = [App.Placement(o.Placement) for o in objects]
+        for copy in (False, True):
+            transform_start(copy)
+            enter((0, 0, 0))
+            action("ConfirmPoint")
+            action("FinishLine")
+            assert gui._session is None and len(doc.Objects) == 2
+            transform_start(copy)
+            queue = []
+            gui._session.backend.defer = queue.append
+            wire_points(((0, 0, 0), (10, 0, 0)))
+            assert len(queue) == 1 and gui._session.pending
+            gui.cancel()
+            queue[0]()
+            assert all(o.Placement == p for o, p in zip(objects, initial))
+            assert len(doc.Objects) == 2 and not AF.isActive()
+
+    def transform_selection(doc):
+        def rejected():
+            try:
+                gui.start("move")
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("Unsupported selection was accepted")
+            assert gui._session is None and not AF.isActive()
+        Gui.Selection.clearSelection()
+        rejected()
+        objects = transform_fixture(doc)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(objects[0], "Edge1")
+        rejected()
+        group = doc.addObject("App::DocumentObjectGroup", "TestGroup")
+        group.addObject(objects[0])
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(objects[0])
+        rejected()
+
+    def transform_changed(doc):
+        objects = transform_fixture(doc)
+        transform_start()
+        objects[0].Placement.Base = App.Vector(2, 0, 0)
+        doc.recompute()
+        QTest.qWait(250)
+        assert gui._session is None and not AF.isActive()
+        transform_start(True)
+        doc.removeObject(objects[0].Name)
+        QTest.qWait(250)
+        assert gui._session is None and not AF.isActive() and len(doc.Objects) == 1
+
+    def transform_failure(doc):
+        import Draft
+        objects = transform_fixture(doc)
+        initial = [App.Placement(o.Placement) for o in objects]
+        original = Draft.move
+        def fail(*args, **kwargs):
+            original(*args, **kwargs)
+            raise RuntimeError("intentional transform rollback test")
+        for copy in (False, True):
+            Gui.Selection.clearSelection()
+            for obj in objects:
+                Gui.Selection.addSelection(obj)
+            transform_start(copy)
+            Draft.move = fail
+            try:
+                wire_points(((0, 0, 0), (10, 0, 0)))
+            finally:
+                Draft.move = original
+            assert gui._session is None and not AF.isActive() and len(doc.Objects) == 2
+            assert all(o.Placement == p for o, p in zip(objects, initial))
+
+    def transform_mouse(doc):
+        objects = transform_fixture(doc)
+        Gui.activeDocument().activeView().fitAll()
+        AF.setSetting("useSnapping", True)
+        only_snap("Endpoint")
+        transform_start()
+        mouse_at(App.Vector(0, 0, 0), True)
+        mouse_at(App.Vector(10, 0, 0), True)
+        assert gui._session is None and not AF.isActive()
+        equal(points(objects[0]), [[10, 0, 0], [20, 0, 0]])
+
+    def transform_lifecycle(doc):
+        objects = transform_fixture(doc)
+        transform_start()
+        other = App.newDocument("TransformOther")
+        QTest.qWait(250)
+        assert gui._session is None and not other.Objects
+        App.setActiveDocument(doc.Name)
+        Gui.Selection.clearSelection()
+        for obj in objects:
+            Gui.Selection.addSelection(obj)
+        transform_start(True)
+        Gui.activateWorkbench("DraftWorkbench")
+        wait()
+        assert gui._session is None and len(doc.Objects) == 2
+        Gui.activateWorkbench("UniStationWorkbench")
+        transform_start()
+        App.closeDocument(doc.Name)
+        QTest.qWait(250)
+        assert gui._session is None and not AF.isActive()
+
+    def transform_geometry_types(doc):
+        import Draft
+        import Part
+        wire = Draft.make_wire([App.Vector(), App.Vector(4, 0, 0), App.Vector(4, 3, 0)], closed=True, face=False)
+        arc = Draft.make_circle(Part.Arc(App.Vector(10, 0, 0), App.Vector(12, 2, 0),
+                                        App.Vector(14, 0, 0)).toShape(), face=False)
+        solid = doc.addObject("Part::Feature", "Solid")
+        solid.Shape = Part.makeBox(2, 3, 4)
+        solid.Placement = App.Placement(App.Vector(20, 0, 0), App.Rotation(App.Vector(1, 0, 0), 30))
+        doc.recompute()
+        objects = [wire, arc, solid]
+        initial = [App.Placement(o.Placement) for o in objects]
+        lengths = [o.Shape.Length for o in objects]
+        for copy in (False, True):
+            Gui.Selection.clearSelection()
+            for obj in objects:
+                Gui.Selection.addSelection(obj)
+            transform_start(copy, True)
+            wire_points(((0, 0, 0), (3, 4, 5)))
+            assert gui._session is None and not AF.isActive()
+        assert len(doc.Objects) == 6
+        copies = [o for o in doc.Objects if o not in objects]
+        for obj, duplicate, placement, length in zip(objects, copies, initial, lengths):
+            equal([list(obj.Placement.Base), list(duplicate.Placement.Base)],
+                  [list(placement.Base + App.Vector(3, 4, 5)), list(placement.Base + App.Vector(6, 8, 10))])
+            assert obj.Placement.Rotation.isSame(placement.Rotation, 1e-7)
+            assert duplicate.Placement.Rotation.isSame(placement.Rotation, 1e-7)
+            assert abs(obj.Shape.Length-length) < 1e-6 and abs(duplicate.Shape.Length-length) < 1e-6
+        assert copies[0].Closed and len(copies[1].Shape.Edges) == 1 and len(copies[2].Shape.Solids) == 1
+
+    setting_keys = ("smartNegativeDirection", "focusAdvanceOnMove", "compassFollowDirection",
+                    "useSnapping", "useAxesIndexing", "useDistanceIndexing")
+
+    def configured(test, settings):
+        def wrapped(doc):
+            saved = {key: AF.getSettings()[key] for key in settings}
+            try:
+                for key, value in settings.items():
+                    AF.setSetting(key, value)
+                detail = test(doc)
+                return {"settings": settings, "detail": detail}
+            finally:
+                gui.cancel()
+                for key, value in saved.items():
+                    AF.setSetting(key, value)
+        return wrapped
+
+    defaults = {key: AF.getDefaultSettings()[key] for key in setting_keys}
+    results["tested_factory_settings"] = defaults
+
+    def move_world(doc):
+        objects = transform_fixture(doc)
+        initial = [App.Vector(o.Placement.Base) for o in objects]
+        transform_start(world=True)
+        wire_points(((10, 20, 0), (15, 27, 3)))
+        equal([list(o.Placement.Base) for o in objects],
+              [list(p + App.Vector(5, 7, 3)) for p in initial])
+        assert gui._session is None and not AF.isActive()
+
+    def direction_sign(doc):
+        import Draft
+        Draft.make_line(App.Vector(-40, -30, 0), App.Vector(40, 30, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        start()
+        frame(True)
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        frame(False)
+        mouse_at(App.Vector(-20, -10, 0))
+        enter((5, 4, 0))
+        action("ConfirmPoint")
+        sign = -1 if AF.getSettings()["smartNegativeDirection"] else 1
+        equal(points(doc.Objects[-1]), [[0, 0, 0], [sign*5, sign*4, 0]])
+
+    def focus_advance(doc):
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        mouse_at(App.Vector(10, 2, 0))
+        edit = fields()[0]
+        edit.setFocus()
+        edit.selectAll()
+        QTest.keyClicks(edit, "5")
+        assert edit.hasFocus()
+        mouse_at(App.Vector(20, 12, 0))
+        assert fields()[1].hasFocus(), "Movement did not advance X entry to Y"
+        assert gui._session is not None and not doc.Objects
+
+    def follow_direction(doc):
+        wire_start()
+        wire_points(((0, 0, 0), (10, 10, 0), (10, 0, 0)))
+        action("FinishLine")
+        expected = 10 + 10 / math.sqrt(2)
+        equal(points(doc.Objects[0]), [[0, 0, 0], [10, 10, 0], [expected, expected, 0]])
+
+    def indexing_axis(doc):
+        import Draft
+        Draft.make_line(App.Vector(-30, -20, 0), App.Vector(30, 20, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        mouse_at(App.Vector(20, 0.1, 0))
+        results["axis_indexing_diagnostic"] = str(AF.getState())
+        mouse_at(App.Vector(20, 0.1, 0), True)
+        end = doc.Objects[-1].Shape.Vertexes[-1].Point
+        assert abs(end.y) < 1e-6 and abs(end.x-20) < 1, list(end)
+
+    def indexing_distance(doc):
+        import Draft
+        Draft.make_line(App.Vector(-30, -20, 0), App.Vector(30, 20, 0))
+        doc.recompute()
+        Gui.activeDocument().activeView().fitAll()
+        start()
+        enter((0, 0, 0))
+        action("ConfirmPoint")
+        AF.setIndexedDistance(10)
+        try:
+            mouse_at(App.Vector(6.1, 8.1, 0))
+            results["distance_indexing_diagnostic"] = str(AF.getState())
+            mouse_at(App.Vector(6.1, 8.1, 0), True)
+            assert abs(doc.Objects[-1].Shape.Length-10) < 1e-6, points(doc.Objects[-1])
+        finally:
+            AF.clearIndexedDistance()
+
+    def remapped_confirm(chord):
+        def test(doc):
+            saved = AF.getSettings()["hotkeys"]["ConfirmPoint"]
+            binding = [[int(QtCore.Qt.Key_F6), int(QtCore.Qt.Key_F7)]] if chord else [int(QtCore.Qt.Key_F6)]
+            AF.setHotkeys("ConfirmPoint", binding, False)
+            try:
+                start()
+                hint = gui.key_hint(AF, "ConfirmPoint")
+                assert "F6" in hint and (not chord or "F7" in hint)
+                assert hint in gui._session.backend.panel.instructions.text()
+                wire_points(((0, 0, 0), (10, 5, 0)))
+                equal(points(doc.Objects[0]), [[0, 0, 0], [10, 5, 0]])
+                assert gui._session is None and not AF.isActive()
+            finally:
+                AF.setHotkeys("ConfirmPoint", saved, False)
+        return test
+
+    settings_cases = [
+        ("defaults_line", configured(world, defaults)),
+        ("defaults_wire", configured(wire_pick_first, defaults)),
+        ("defaults_circle", configured(circle_world, defaults)),
+        ("defaults_arc", configured(arc_directions, defaults)),
+        ("defaults_move", configured(move_world, defaults)),
+        ("defaults_copy", configured(copy_world, defaults)),
+        ("smart_negative_on", configured(direction_sign, {"smartNegativeDirection": True})),
+        ("smart_negative_off", configured(direction_sign, {"smartNegativeDirection": False})),
+        ("focus_advance_on_move", configured(focus_advance, {"focusAdvanceOnMove": True})),
+        ("follow_direction_plane", configured(follow_direction, {"compassFollowDirection": 1})),
+        ("follow_direction_full", configured(follow_direction, {"compassFollowDirection": 2})),
+        ("axis_indexing_on", configured(indexing_axis, {"useAxesIndexing": True})),
+        ("distance_indexing_on", configured(indexing_distance, {"useDistanceIndexing": True})),
+        ("confirm_hotkey_remapped", remapped_confirm(False)),
+        ("confirm_hotkey_chord", remapped_confirm(True)),
+    ]
+
+    cases = settings_cases + [("transform_geometry_types", transform_geometry_types),
+             ("move_local_preview_undo", move_local), ("copy_world_undo_save", copy_world),
+             ("transform_tilted_plane", transform_plane), ("transform_cancel_pending", transform_cancel_pending),
+             ("transform_selection_rejection", transform_selection), ("transform_changed_objects", transform_changed),
+             ("transform_rollback", transform_failure), ("transform_mouse_endpoint_snap", transform_mouse),
+             ("transform_lifecycle", transform_lifecycle),
+             ("arc_local_preview_undo_save", arc_local), ("arc_world_directions", arc_directions),
+             ("arc_tilted_plane", arc_plane), ("arc_reject_retry", arc_retry),
+             ("arc_cancel", arc_cancel), ("arc_mouse_endpoint_snap", arc_mouse),
+             ("arc_lifecycle", arc_lifecycle), ("arc_rollback", arc_failure),
+             ("circle_local_preview_undo_save", circle_local), ("circle_world", circle_world),
+             ("circle_tilted_plane", circle_plane), ("circle_polar", circle_polar),
+             ("circle_reject_retry", circle_reject), ("circle_cancel", circle_cancel),
+             ("circle_mouse_endpoint_snap", circle_mouse), ("circle_lifecycle", circle_lifecycle),
+             ("circle_rollback", circle_failure),
+             ("wire_open_undo_save", wire_open), ("wire_closed_button", wire_closed),
+             ("wire_closed_first_point_world", wire_pick_first), ("wire_cancel", wire_cancel),
+             ("wire_mouse_endpoint_snap", wire_mouse_snap),
+             ("wire_insufficient_points", wire_short), ("wire_tilted_plane", wire_plane),
+             ("wire_lifecycle", wire_lifecycle), ("wire_rollback", wire_failure),
+             ("numeric_local_signed_decimal", numeric), ("numeric_world", world),
+             ("keyin_absolute_relative_units_undo", keyin_absolute_relative_undo),
+             ("keyin_invalid_retry", keyin_invalid_retry),
+             ("keyin_duplicate_retry", keyin_duplicate_retry),
+             ("keyin_after_axisflow_world", keyin_after_axisflow_world),
+             ("keyin_after_mouse_world", keyin_after_mouse_world),
+             ("mouse_after_keyin_world", mouse_after_keyin_world),
+             ("line_visual_checkpoints", line_visual_checkpoints),
+             ("axisflow_after_keyin_local", axisflow_after_keyin_local),
+             ("keyin_tilted_explicit_world", keyin_tilted_world),
+             ("keyin_escape", keyin_escape), ("keyin_close_focused", keyin_close_focused),
+             ("keyin_return_vs_smart_lock", keyin_return_vs_smart_lock),
+             ("keyin_stale_panel", keyin_stale_panel),
+             ("keyin_command_scope", keyin_command_scope),
+             ("wire_keyin_relative_finish_undo", wire_keyin_relative_finish_undo),
+             ("wire_keyin_reject_retry", wire_keyin_reject_retry),
+             ("wire_keyin_close", wire_keyin_close),
+             ("wire_keyin_escape", wire_keyin_escape),
+             ("wire_keyin_after_mouse", wire_keyin_after_mouse),
+             ("wire_mouse_after_keyin", wire_mouse_after_keyin),
+             ("wire_keyin_tilted_world", wire_keyin_tilted_world),
+             ("wire_keyin_lifecycle", wire_keyin_lifecycle),
+             ("wire_keyin_return_vs_smart_lock", wire_keyin_return_vs_smart_lock),
+             ("circle_keyin_units_undo", circle_keyin_units_undo),
+             ("circle_keyin_reject_retry", circle_keyin_reject_retry),
+             ("circle_keyin_after_mouse", circle_keyin_after_mouse),
+             ("circle_mouse_after_keyin", circle_mouse_after_keyin),
+             ("circle_keyin_tilted_world", circle_keyin_tilted_world),
+             ("circle_keyin_escape", circle_keyin_escape),
+             ("circle_keyin_lifecycle", circle_keyin_lifecycle),
+             ("circle_keyin_return_vs_smart_lock", circle_keyin_return_vs_smart_lock),
+             ("keyin_focus_probe", keyin_focus_probe),
+             ("escape_during_entry", escape), ("panel_power_off_cleanup", power),
+             ("polar_distance_angle", polar), ("translated_working_plane", translated_plane),
+             ("tilted_working_plane", tilted_plane), ("enter_and_actual_hotkey_hint", smart_lock),
+             ("mouse_two_points", mouse_line), ("endpoint_snapping", endpoint_snap),
+             ("midpoint_snapping", midpoint_snap), ("center_snapping", center_snap),
+             ("intersection_snapping", intersection_snap),
+             ("axis_lock", axis_lock), ("numeric_unit_suffix_limit", numeric_unit_validator),
+             ("transaction_rollback", transaction_failure), ("workbench_switches", workbench_switch),
+             ("close_document", close_document)]
+    requested = os.environ.get("UNISTATION_GUI_CASES", "")
+    scope_path = root / "tests" / "current_scope.json"
+    try:
+        catalog_bytes = scope_path.read_bytes()
+        catalog = json.loads(catalog_bytes.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            "current_scope.json is required and could not be read: " + str(exc)
+        ) from exc
+    registered_names = [name for name, _ in cases]
+    selected_names = select_axisflow_cases(registered_names, catalog, requested)
+    selected = set(selected_names)
+    cases = [(name, test) for name, test in cases if name in selected]
+    results["case_filter"] = requested or None
+    results["scope"] = catalog["scope"]
+    results["scope_reason"] = catalog["reason"]
+    results["scope_sha256"] = hashlib.sha256(catalog_bytes).hexdigest()
+    results["included_qt"] = list(catalog["included_qt"])
+    results["deferred_qt"] = list(catalog["deferred_qt"])
+
+    def begin_case(name, doc):
+        trace.begin(name, doc.Name)
+
+    def record_case_failure(name, original_error):
+        payload = trace.failure_payload(
+            original_error,
+            gui_diagnostics.collect_snapshot(observation_readers()),
+            os.getpid())
+        path = gui_diagnostics.write_case_file(output_dir, name, payload)
+        return {"diagnostics_path": str(path)}
+
+    def cleanup_case():
+        gui.cancel()
+        AF.endSession()
+        AF.setSetting("useSnapping", False)
+        for remaining in list(App.listDocuments()):
+            App.closeDocument(remaining)
+        wait()
+
+    for name, test in cases:
+        App.Console.PrintLog("UniStation GUI case: " + name + "\n")
+        doc = App.newDocument("QtInputTest")
+        Gui.activeDocument().activeView().viewTop()
+        wp = WorkingPlane.get_working_plane()
+        wp.set_to_top()
+        # Fixture state reset via public API; point acceptance always uses Qt events.
+        AF.confirm(App.Vector())
+        results["cases"].append(run_one_case(
+            name, test, doc, begin_case, record_case_failure, cleanup_case))
+        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    results["status"] = "passed" if all(c["status"] == "passed" for c in results["cases"]) else "failed"
+    output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    QtCore.QTimer.singleShot(0, Gui.getMainWindow().close)
+
+
+def guarded_run():
+    try:
+        run()
+    except Exception:
+        results["status"] = "error"
+        results["error"] = traceback.format_exc()
+        output.write_text(json.dumps(results, indent=2), encoding="utf-8")
+        Gui.getMainWindow().close()
+
+
+QtCore.QTimer.singleShot(1500, guarded_run)
+

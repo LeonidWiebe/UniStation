@@ -1,0 +1,298 @@
+"""AxisFlow key-in bridge runtime probe. Candidate points are injected directly."""
+import hashlib
+import json
+import math
+import os
+import sys
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore, QtGui, QtWidgets
+try:
+    from PySide6.QtTest import QTest
+except ImportError:
+    from PySide2.QtTest import QTest
+
+root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root / "UniStation"))
+sys.path.insert(0, str(root / "tests"))
+output_dir = Path(os.environ["UNISTATION_TEST_OUTPUT"])
+output_dir.mkdir(parents=True, exist_ok=True)
+output = output_dir / "keyin-probe.json"
+report = {"freecad": App.Version(), "python": sys.version, "qt": QtCore.qVersion(),
+          "user_data": App.getUserAppDataDir(), "method": "injected candidate points + Qt events; no OS input",
+          "started_at": datetime.now(timezone.utc).isoformat(), "status": "running", "cases": []}
+output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+settings_snapshot = None
+
+
+def run():
+    global settings_snapshot
+    import AxisFlow as AF
+    import WorkingPlane
+    from unistation import gui
+    from runtime_metadata import native_modules
+    report["axisflow_binary"] = AF.__file__
+    report["axisflow_sha256"] = hashlib.sha256(Path(AF.__file__).read_bytes()).hexdigest()
+    report["native_modules"] = native_modules()
+    Gui.activateWorkbench("DraftWorkbench")
+    Gui.activateWorkbench("UniStationWorkbench")
+    settings = AF.getSettings()
+    keys = ("smartNegativeDirection", "focusAdvanceOnMove", "compassFollowDirection",
+            "useSnapping", "useAxesIndexing", "useDistanceIndexing")
+    saved = {key: settings[key] for key in keys}
+    settings_snapshot = saved
+    for key, value in {"smartNegativeDirection": False, "focusAdvanceOnMove": False,
+                       "compassFollowDirection": 0, "useSnapping": False,
+                       "useAxesIndexing": False, "useDistanceIndexing": False}.items():
+        AF.setSetting(key, value)
+    widget_refs = []
+
+    def wait():
+        QTest.qWait(120)
+
+    def equal_vector(actual, expected, tol=1e-6):
+        actual, expected = App.Vector(actual), App.Vector(expected)
+        assert (actual - expected).Length <= tol, (list(actual), list(expected))
+
+    def points(obj):
+        return [list(v.Point) for v in obj.Shape.Vertexes]
+
+    def start():
+        gui.start()
+        AF.setMode("rect")
+        wait()
+        assert gui._session is not None
+        return gui._session
+
+    def inject(p):
+        """Exercise the candidate bridge in the requested order."""
+        session = gui._session
+        assert session is not None and not session.closed
+        p = App.Vector(p)
+        session.point(p, True)
+        if gui._session is session and not session.closed and AF.isActive():
+            AF.confirm(p)
+            AF.setBasePoint(p)
+        wait()
+
+    def panel():
+        candidates = QtWidgets.QApplication.topLevelWidgets()
+        widget_refs.extend(candidates)
+        found = [w for w in candidates
+                 if len(w.findChildren(QtWidgets.QLineEdit)) == 3
+                 and any(label.text() == "AxisFlow" for label in w.findChildren(QtWidgets.QLabel))]
+        assert len(found) == 1, [(w.windowTitle(), w.metaObject().className()) for w in candidates]
+        return found[0]
+
+    def frame(world):
+        button = panel().findChildren(QtWidgets.QPushButton)[0]
+        world_label = QtCore.QCoreApplication.translate("AxisFlowGui::AxisFlowPanel", "World")
+        if (button.text() == world_label) != world:
+            QTest.mouseClick(button, QtCore.Qt.LeftButton)
+        wait()
+
+    def action(name):
+        binding = AF.getSettings()["hotkeys"][name][0]
+        chord = binding if isinstance(binding, list) else [binding]
+        edits = panel().findChildren(QtWidgets.QLineEdit)
+        for key in chord:
+            QTest.keyClick(edits[0], QtCore.Qt.Key(key))
+        wait()
+
+    def enter(values):
+        edits = panel().findChildren(QtWidgets.QLineEdit)
+        for edit, value in zip(edits, values):
+            edit.setFocus(); edit.selectAll(); QTest.keyClicks(edit, str(value))
+        wait()
+
+    def qt_point(p):
+        enter(p)
+        action("ConfirmPoint")
+
+    def fresh():
+        doc = App.newDocument("KeyinProbe")
+        doc.UndoMode = 1
+        Gui.activeDocument().activeView().viewTop()
+        wp = WorkingPlane.get_working_plane()
+        wp.set_to_top()
+        AF.confirm(App.Vector())
+        AF.setPlane(wp.u, wp.v, wp.axis)
+        return doc
+
+    def record(name, fn):
+        item = {"name": name, "status": "running"}
+        report["cases"].append(item)
+        try:
+            item.update(fn())
+            item["status"] = "passed"
+        except Exception:
+            item["status"] = "failed"
+            item["error"] = traceback.format_exc()
+        finally:
+            try:
+                gui.cancel()
+                if AF.isActive(): AF.endSession()
+                for d in list(App.listDocuments().values()): App.closeDocument(d.Name)
+                wait()
+            except Exception:
+                item.setdefault("cleanup_errors", []).append(traceback.format_exc())
+                item["status"] = "failed"
+            if item.get("cleanup_errors"):
+                item["status"] = "failed"
+            output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    def case1():
+        doc = fresh(); session = start(); p = App.Vector(10, 20, 0)
+        AF.confirm(p); wait()
+        actual = {"first": list(session.first) if session.first else None,
+                  "objects": len(doc.Objects), "origin_after_confirm": list(AF.getState()["origin"])}
+        assert session.first is None and not doc.Objects
+        equal_vector(AF.getState()["origin"], p)
+        before = session.first
+        AF.setBasePoint(App.Vector(3, 4, 0)); wait()
+        assert session.first is before and not doc.Objects
+        equal_vector(AF.getState()["origin"], App.Vector(3,4,0))
+        actual["first_after_set_base_point"] = list(session.first) if session.first else None
+        actual["origin_after_set_base_point"] = list(AF.getState()["origin"])
+        session.cancel()
+        return {"expected": {"first": None, "objects": 0, "origin_after_confirm": [10,20,0],
+                             "first_after_set_base_point": None, "origin_after_set_base_point": [3,4,0]},
+                "actual": actual, "callback_count": "not measured; LineSession callback is bound directly"}
+
+    def case2(follow):
+        AF.setSetting("compassFollowDirection", follow)
+        doc = fresh(); session = start(); frame(False); p = App.Vector(10,20,0)
+        inject(p)
+        assert session.first is not None
+        assert len(doc.Objects) == 0
+        equal_vector(session.first, p); equal_vector(AF.getState()["origin"], p)
+        enter((5,7,0)); action("ConfirmPoint")
+        if follow == 0:
+            endpoint = App.Vector(15,27,0)
+        else:
+            # Direction follows the initial (10,20) reference, rotated in XY.
+            u = App.Vector(1/math.sqrt(5), 2/math.sqrt(5), 0)
+            v = App.Vector(-2/math.sqrt(5), 1/math.sqrt(5), 0)
+            endpoint = p + 5*u + 7*v
+        expected = [list(p), list(endpoint)]
+        actual = points(doc.Objects[0]) if doc.Objects else []
+        for a,e in zip(actual, expected): equal_vector(a,e)
+        assert len(actual) == 2 and len(doc.Objects) == 1 and gui._session is None and not AF.isActive()
+        return {"expected": {"geometry": expected, "objects": 1, "session_ended": True},
+                "actual": {"geometry": actual, "objects": len(doc.Objects),
+                           "session_ended": gui._session is None, "plane": str(AF.getState().get("plane"))},
+                "callback_count": "not measured; LineSession callback is bound directly"}
+
+    def case3():
+        AF.setSetting("compassFollowDirection", 0)
+        doc = fresh(); start(); frame(True); qt_point((10,20,0)); assert gui._session.first
+        inject(App.Vector(15,27,0))
+        expected = [[10,20,0],[15,27,0]]
+        actual = points(doc.Objects[0]) if doc.Objects else []
+        assert len(doc.Objects)==1 and gui._session is None and not AF.isActive()
+        assert len(actual)==2
+        for a,e in zip(actual,expected): equal_vector(a,e)
+        undo_count = doc.UndoCount
+        doc.undo(); undo_objects = len(doc.Objects)
+        doc.redo(); redo_objects = len(doc.Objects)
+        assert undo_objects == 0 and redo_objects == 1 and doc.UndoCount == undo_count
+        return {"expected": {"geometry": expected,"objects":1,"undo_objects":0,"redo_objects":1},
+                "actual": {"geometry":actual,"objects":1,"undo_objects":undo_objects,
+                           "redo_objects":redo_objects,"undo_count":undo_count},
+                "callback_count": "not measured; LineSession callback is bound directly"}
+
+    def viewport():
+        mdi = Gui.getMainWindow().findChild(QtWidgets.QMdiArea)
+        widgets = mdi.activeSubWindow().findChildren(QtWidgets.QWidget); widget_refs.extend(widgets)
+        found = [w for w in widgets if w.inherits("QOpenGLWidget")]
+        assert len(found)==1
+        return found[0]
+
+    def mouse_at(p, click=False):
+        view = Gui.activeDocument().activeView(); gl = viewport()
+        x,y = view.getPointOnScreen(p)
+        dpr = gl.devicePixelRatioF()
+        physical_height = int(round(gl.height() * dpr))
+        pos = QtCore.QPoint(int(round(x / dpr)),
+                            int(round((physical_height - y - 1) / dpr)))
+        event = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, QtCore.QPointF(pos),
+                                  QtCore.QPointF(gl.mapToGlobal(pos)), QtCore.Qt.NoButton,
+                                  QtCore.Qt.NoButton, QtCore.Qt.NoModifier)
+        QtWidgets.QApplication.sendEvent(gl,event); wait()
+        if click: QTest.mouseClick(gl,QtCore.Qt.LeftButton,QtCore.Qt.NoModifier,pos); wait()
+
+    def case4():
+        import Draft
+        AF.setSetting("compassFollowDirection", 0)
+        doc=fresh(); reference=Draft.make_line(App.Vector(-40,-30,0),App.Vector(40,30,0))
+        doc.recompute(); Gui.activeDocument().activeView().fitAll()
+        session=start(); frame(True); inject(App.Vector(0,0,0)); assert session.first is not None
+        mouse_at(App.Vector(20,10,0),True)
+        created=[o for o in doc.Objects if o is not reference]
+        assert len(created)==1 and len(doc.Objects)==2 and gui._session is None and not AF.isActive()
+        actual=points(created[0]); expected=[[0,0,0],[20,10,0]]
+        assert len(actual)==2
+        for a,e in zip(actual,expected): equal_vector(a,e,1.0)
+        return {"expected":{"geometry":expected,"objects":2,"session_ended":True,"tolerance_mm":1},
+                "actual":{"geometry":actual,"objects":len(doc.Objects),"session_ended":gui._session is None,
+                          "mouse_device_pixel_ratio":gl.devicePixelRatioF(),
+                          "viewport_logical_size":[gl.width(),gl.height()]},
+                "callback_count":"not measured; LineSession callback is bound directly"}
+
+    def case5(follow):
+        AF.setSetting("compassFollowDirection",follow)
+        doc=fresh(); callbacks=[]
+        def collect(p, ok):
+            callbacks.append({"point":list(p) if p is not None else None, "ok":bool(ok)})
+        AF.setMode("rect")
+        AF.getPoint(callback=collect, continuous=True, last=App.Vector(0,0,0))
+        frame(True)
+        qt_point((0,0,0)); count_first=len(callbacks)
+        assert count_first==1
+        candidate=App.Vector(10,10,0)
+        AF.confirm(candidate); AF.setBasePoint(candidate); wait()
+        count_after=len(callbacks)
+        assert count_after==1
+        equal_vector(callbacks[0]["point"],App.Vector(0,0,0))
+        assert callbacks[0]["ok"] is True
+        frame(False)
+        enter((10,0,0)); action("ConfirmPoint")
+        expected_end=App.Vector(10+math.sqrt(50),10+math.sqrt(50),0)
+        assert len(callbacks)==2 and not doc.Objects and AF.isActive()
+        equal_vector(callbacks[1]["point"],expected_end)
+        return {"expected":{"collector_callbacks_after_candidate":1,"callbacks_after_local_confirm":2,
+                            "points":[[0,0,0],list(expected_end)]},
+                "actual":{"collector_callbacks_after_candidate":count_after,"callbacks_after_local_confirm":len(callbacks),
+                          "events":callbacks},"callback_count":len(callbacks)}
+
+    record("confirm_is_not_getpoint",case1)
+    for follow in (0,1,2): record("injected_first_local_follow_%d"%follow,lambda f=follow:case2(f))
+    record("qt_first_injected_second_undo_redo",case3)
+    record("injected_first_mouse_second",case4)
+    for follow in (1,2): record("raw_callback_and_rotation_follow_%d"%follow,lambda f=follow:case5(f))
+    report["status"]="passed" if all(c["status"]=="passed" for c in report["cases"]) else "failed"
+    output.write_text(json.dumps(report,indent=2),encoding="utf-8")
+    QtCore.QTimer.singleShot(0,Gui.getMainWindow().close)
+
+
+def guarded():
+    try: run()
+    except Exception:
+        report["status"]="error"; report["error"]=traceback.format_exc()
+        try: output.write_text(json.dumps(report,indent=2),encoding="utf-8")
+        finally: Gui.getMainWindow().close()
+    finally:
+        if settings_snapshot:
+            try:
+                import AxisFlow as AF
+                for key,value in settings_snapshot.items(): AF.setSetting(key,value)
+            except Exception:
+                report.setdefault("cleanup_errors",[]).append(traceback.format_exc())
+                if report.get("status") == "passed": report["status"]="failed"
+                output.write_text(json.dumps(report,indent=2),encoding="utf-8")
+
+QtCore.QTimer.singleShot(1500,guarded)

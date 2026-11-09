@@ -1,0 +1,8 @@
+# Preserve the imported snapshot byte-for-byte, including existing CRLF files.
+# New public documentation is UTF-8 with LF endings.
+* -text
+*.md text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+LICENSE text eol=lf
+*.qm binary

@@ -1,0 +1,105 @@
+"""Run in a separate FreeCAD process with isolated configuration files.
+
+Exercises real Draft geometry and AxisFlow session setup/teardown.
+Point callbacks are injected: this does NOT verify mouse/keyboard routing.
+"""
+import json
+import sys
+import traceback
+import hashlib
+import os
+from pathlib import Path
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore
+
+root = Path(__file__).resolve().parents[1]
+out = Path(os.environ.get("UNISTATION_TEST_OUTPUT", str(root / "test-output")))
+out.mkdir(parents=True, exist_ok=True)
+sys.path.insert(0, str(root / "UniStation"))
+sys.path.insert(0, str(root / "tests"))
+result = {"freecad": App.Version(), "checks": [], "input": "injected callbacks",
+          "python": sys.version, "qt": QtCore.qVersion(),
+          "user_data": App.getUserAppDataDir()}
+
+
+def run():
+    names = []
+    try:
+        import AxisFlow
+        from runtime_metadata import native_modules
+        result["native_modules"] = native_modules()
+        result["axisflow_binary"] = AxisFlow.__file__
+        result["axisflow_sha256"] = hashlib.sha256(
+            Path(AxisFlow.__file__).read_bytes()).hexdigest()
+        Gui.activateWorkbench("DraftWorkbench")
+        Gui.activateWorkbench("UniStationWorkbench")
+        assert Gui.activeWorkbench().name() == "UniStationWorkbench"
+        result["checks"].append("workbench discovery and activation")
+        from unistation import gui
+        gui.register()
+        doc = App.newDocument("UniStationSmoke")
+        names.append(doc.Name)
+        doc.UndoMode = 1
+        gui.start()
+        assert AxisFlow.isActive()
+        assert gui._session.backend.panel.getStandardButtons() is not None
+        session = gui._session
+        session.point(App.Vector(1, 2, 3), True)
+        session.move(App.Vector(4, 6, 3))
+        session.point(App.Vector(4, 6, 3), True)
+        assert gui._session is None and not AxisFlow.isActive()
+        assert len(doc.Objects) == 1
+        line = doc.Objects[0]
+        assert abs(line.Shape.Length - 5.0) < 1e-7
+        assert (line.Shape.Vertexes[0].Point - App.Vector(1, 2, 3)).Length < 1e-7
+        result["checks"].append("real Draft line, coordinates, preview, teardown")
+        doc.undo()
+        assert len(doc.Objects) == 0
+        doc.redo()
+        assert len(doc.Objects) == 1
+        result["checks"].append("undo and redo")
+        path = str(out / "line.FCStd")
+        doc.recompute()
+        doc.saveAs(path)
+        App.closeDocument(doc.Name)
+        doc = App.openDocument(path)
+        names.append(doc.Name)
+        assert abs(doc.Objects[0].Shape.Length - 5.0) < 1e-7
+        result["checks"].append("save and reopen")
+        gui.start()
+        gui._session.point(App.Vector(10, 20, 30), True)
+        gui.cancel()
+        assert len(doc.Objects) == 1 and not AxisFlow.isActive()
+        result["checks"].append("cancel after first point")
+        gui.start()
+        backend = gui._session.backend
+        other = App.newDocument("UniStationOther")
+        names.append(other.Name)
+        backend.guard()
+        assert gui._session is None and not AxisFlow.isActive()
+        assert not other.Objects and len(doc.Objects) == 1
+        result["checks"].append("document switch guard")
+        gui.start()
+        Gui.activateWorkbench("DraftWorkbench")
+        assert gui._session is None and not AxisFlow.isActive()
+        result["checks"].append("workbench switch cancellation")
+        result["status"] = "passed"
+    except Exception:
+        result["status"] = "failed"
+        result["traceback"] = traceback.format_exc()
+    finally:
+        try:
+            from unistation import gui
+            gui.cancel()
+        except Exception:
+            pass
+        for name in set(names):
+            if name in App.listDocuments():
+                App.closeDocument(name)
+        (out / "freecad-smoke.json").write_text(
+            json.dumps(result, indent=2), encoding="utf-8")
+        QtCore.QTimer.singleShot(0, Gui.getMainWindow().close)
+
+
+QtCore.QTimer.singleShot(1500, run)

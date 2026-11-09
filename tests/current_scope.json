@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "scope": "axisflow-core",
+  "reason": "Текущие автотесты проверяют шесть команд через штатные поля AxisFlow, мышь, горячие клавиши и геометрию. Координатный key-in сохранён в коде и тестах, но отложен.",
+  "included_qt": [
+    "defaults_line",
+    "defaults_wire",
+    "defaults_circle",
+    "defaults_arc",
+    "defaults_move",
+    "defaults_copy",
+    "smart_negative_on",
+    "smart_negative_off",
+    "focus_advance_on_move",
+    "follow_direction_plane",
+    "follow_direction_full",
+    "axis_indexing_on",
+    "distance_indexing_on",
+    "confirm_hotkey_remapped",
+    "confirm_hotkey_chord",
+    "transform_geometry_types",
+    "move_local_preview_undo",
+    "copy_world_undo_save",
+    "transform_tilted_plane",
+    "transform_cancel_pending",
+    "transform_selection_rejection",
+    "transform_changed_objects",
+    "transform_rollback",
+    "transform_mouse_endpoint_snap",
+    "transform_lifecycle",
+    "arc_local_preview_undo_save",
+    "arc_world_directions",
+    "arc_tilted_plane",
+    "arc_reject_retry",
+    "arc_cancel",
+    "arc_mouse_endpoint_snap",
+    "arc_lifecycle",
+    "arc_rollback",
+    "circle_local_preview_undo_save",
+    "circle_world",
+    "circle_tilted_plane",
+    "circle_polar",
+    "circle_reject_retry",
+    "circle_cancel",
+    "circle_mouse_endpoint_snap",
+    "circle_lifecycle",
+    "circle_rollback",
+    "wire_open_undo_save",
+    "wire_closed_button",
+    "wire_closed_first_point_world",
+    "wire_cancel",
+    "wire_mouse_endpoint_snap",
+    "wire_insufficient_points",
+    "wire_tilted_plane",
+    "wire_lifecycle",
+    "wire_rollback",
+    "numeric_local_signed_decimal",
+    "numeric_world",
+    "escape_during_entry",
+    "panel_power_off_cleanup",
+    "polar_distance_angle",
+    "translated_working_plane",
+    "tilted_working_plane",
+    "enter_and_actual_hotkey_hint",
+    "mouse_two_points",
+    "endpoint_snapping",
+    "midpoint_snapping",
+    "center_snapping",
+    "intersection_snapping",
+    "axis_lock",
+    "numeric_unit_suffix_limit",
+    "transaction_rollback",
+    "workbench_switches",
+    "close_document"
+  ],
+  "deferred_qt": [
+    {
+      "name": "keyin_absolute_relative_units_undo",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_invalid_retry",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_duplicate_retry",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_after_axisflow_world",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_after_mouse_world",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "mouse_after_keyin_world",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "line_visual_checkpoints",
+      "reason": "deferred_by_scope: сценарий вводит координаты через текстовое поле UniStation, хотя в имени нет keyin. Визуальные свойства preview этим не отменены."
+    },
+    {
+      "name": "axisflow_after_keyin_local",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_tilted_explicit_world",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_escape",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_close_focused",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_return_vs_smart_lock",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_stale_panel",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_command_scope",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_relative_finish_undo",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_reject_retry",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_close",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_escape",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_after_mouse",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_mouse_after_keyin",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_tilted_world",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_lifecycle",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "wire_keyin_return_vs_smart_lock",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_units_undo",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_reject_retry",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_after_mouse",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_mouse_after_keyin",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_tilted_world",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_escape",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_lifecycle",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "circle_keyin_return_vs_smart_lock",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    },
+    {
+      "name": "keyin_focus_probe",
+      "reason": "deferred_by_scope: координатный key-in UniStation сохранён, но исключён из axisflow-core и не считается passed."
+    }
+  ],
+  "included_unit": [
+    "test_acceptance.AcceptanceTests",
+    "test_arc.ArcTests",
+    "test_circle.CircleTests",
+    "test_gui_diagnostics.SnapshotTests",
+    "test_gui_diagnostics.ViewportTests",
+    "test_gui_diagnostics.TraceTests",
+    "test_gui_diagnostics.WriteTests",
+    "test_gui_diagnostics.MacroBranchTests",
+    "test_line.LineTests",
+    "test_transform.TransformTests",
+    "test_wire.WireTests"
+  ],
+  "deferred_unit": [
+    {
+      "class": "test_keyin.ParsePointTests",
+      "reason": "deferred_by_scope: тесты разбора текстовых координат поля UniStation."
+    },
+    {
+      "class": "test_line_keyin.LineKeyinTests",
+      "reason": "deferred_by_scope: тесты submit_point для координатного key-in Line."
+    },
+    {
+      "class": "test_wire.WireResultTests",
+      "reason": "deferred_by_scope: класс смешивает submit_point и геометрию. Обычные callback-проверки Wire остаются в WireTests."
+    },
+    {
+      "class": "test_circle.CircleResultTests",
+      "reason": "deferred_by_scope: класс смешивает submit_point и геометрию. Обычные callback-проверки Circle остаются в CircleTests."
+    }
+  ]
+}

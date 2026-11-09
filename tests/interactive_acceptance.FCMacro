@@ -1,0 +1,114 @@
+"""Prepare a disposable document for OS-level mouse/keyboard acceptance.
+
+Does not inject points or keyboard events. A timer records the real document
+and command state so visual observations can be checked numerically.
+"""
+import os
+import sys
+import uuid
+import traceback
+from pathlib import Path
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore, QtWidgets
+
+root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root / "tools"))
+sys.path.insert(0, str(root / "UniStation"))
+from acceptance import SnapshotWriter
+
+output_dir = Path(os.environ.get("UNISTATION_TEST_OUTPUT", root / "test-output"))
+output_dir.mkdir(parents=True, exist_ok=True)
+output = output_dir / "interactive-state.json"
+command = os.environ.get("UNISTATION_ACCEPTANCE_COMMAND", "line")
+run_id = os.environ.get("UNISTATION_ACCEPTANCE_RUN_ID") or str(uuid.uuid4())
+scenario_id = os.environ.get("UNISTATION_ACCEPTANCE_SCENARIO_ID") or command
+writer = SnapshotWriter(output, run_id, scenario_id, driver="unverified")
+if command not in ("line", "wire", "circle", "arc", "move", "copy"):
+    raise ValueError("Unknown acceptance command: " + command)
+
+
+def prepare():
+    import Draft
+    import AxisFlow
+    from unistation import gui
+    Gui.activateWorkbench("DraftWorkbench")
+    Gui.activateWorkbench("UniStationWorkbench")
+    doc = App.newDocument("UniStationAcceptance")
+    doc_name = doc.Name
+    App._unistation_acceptance_doc_name = doc_name
+    doc.UndoMode = 1
+    line = Draft.make_line(App.Vector(0, 0, 0), App.Vector(40, 0, 0))
+    line.Label = "Reference: 0,0 to 40,0"
+    line.ViewObject.LineColor = (0.2, 0.8, 0.3)
+    circle = Draft.make_circle(5, placement=App.Placement(App.Vector(20, 15, 0), App.Rotation()), face=False)
+    circle.Label = "Reference circle: center 20,15 radius 5"
+    doc.recompute()
+    Gui.activeDocument().activeView().viewTop()
+    Gui.activeDocument().activeView().fitAll()
+    Gui.activeDocument().activeView().setCameraType("Orthographic")
+    Gui.getMainWindow().setWindowTitle("UniStation acceptance: " + command)
+    Gui.Selection.clearSelection()
+    if command in ("move", "copy"):
+        Gui.Selection.addSelection(line)
+        Gui.Selection.addSelection(circle)
+
+    def record():
+        try:
+            data = {"freecad": App.Version(), "axisflow_active": AxisFlow.isActive(),
+                    "command": command,
+                    "observation": "Qt and document state sampled on the GUI thread; input source is unverified",
+                    "observation_error": None,
+                    "session": gui._session is not None, "objects": []}
+            focus = QtWidgets.QApplication.focusWidget()
+            data["focus"] = ({"object_name": focus.objectName() or None,
+                              "class_name": focus.metaObject().className()}
+                             if focus is not None else None)
+            keyin_edit = keyin_error = None
+            session = gui._session
+            panel = getattr(getattr(session, "backend", None), "panel", None) if session else None
+            form = getattr(panel, "form", None) if panel else None
+            if form is not None:
+                keyin_edit = form.findChild(QtWidgets.QLineEdit, "unistation_keyin")
+                keyin_error = form.findChild(QtWidgets.QLabel, "unistation_keyin_error")
+            data["keyin_text"] = keyin_edit.text() if keyin_edit is not None else None
+            data["keyin_selected_text"] = keyin_edit.selectedText() if keyin_edit is not None else None
+            data["keyin_error"] = keyin_error.text() if keyin_error is not None else None
+            if session is not None and session.first is not None:
+                data["first"] = list(session.first)
+            current_doc = App.listDocuments().get(doc_name)
+            for obj in current_doc.Objects if current_doc is not None else []:
+                if hasattr(obj, "Shape"):
+                    data["objects"].append({
+                        "name": obj.Name,
+                        "vertices": [list(v.Point) for v in obj.Shape.Vertexes],
+                        "length": obj.Shape.Length,
+                        "placement_base": list(obj.Placement.Base),
+                        "edges": len(obj.Shape.Edges),
+                        "valid": obj.Shape.isValid(),
+                    })
+                    if hasattr(obj, "Radius"):
+                        data["objects"][-1]["radius"] = obj.Radius.Value
+            data["document_open"] = current_doc is not None
+            writer.write(data)
+        except Exception:
+            message = traceback.format_exc()
+            App.Console.PrintError("Acceptance observer stopped:\n" + message + "\n")
+            timer = getattr(App, "_unistation_acceptance_timer", None)
+            if timer is not None:
+                timer.stop()
+
+    try:
+        gui.start(command)
+    except Exception:
+        App.Console.PrintError("Acceptance task start failed:\n" + traceback.format_exc() + "\n")
+        return
+
+    # Keep observer timer alive for the lifetime of this dedicated GUI process.
+    App._unistation_acceptance_timer = QtCore.QTimer()
+    App._unistation_acceptance_timer.timeout.connect(record)
+    App._unistation_acceptance_timer.start(500)
+    record()
+
+
+QtCore.QTimer.singleShot(1500, prepare)
