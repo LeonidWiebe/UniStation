@@ -1,4 +1,12 @@
-# Prerelease v0.1.0-alpha.2 / Поставка
+# Distribution / Поставка
+
+**Recommended:** [Windows installer v0.1.0-alpha.3](release-v0.1.0-alpha.3.md),
+with component/directory selection and default `%APPDATA%\FreeCAD\v1-1\Mod`.
+FreeCAD is external and started normally; no PowerShell command is required.
+The new wizard's runtime GUI validation is pending. Sources/checksums are in
+the release. The previous ZIP delivery below is retained as history/build input.
+
+## Previous ZIP delivery — v0.1.0-alpha.2
 
 [Download prerelease v0.1.0-alpha.2](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2).
 The user reported successful testing in FreeCAD 1.1.1, accepted in the reported

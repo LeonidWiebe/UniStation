@@ -2,24 +2,25 @@
 
 [Русский](README.ru.md)
 
-The `installer/0.1.0-alpha.3` branch adds a Windows setup wizard candidate with
-component/directory selection and uninstall/restore. Default destination:
-`%APPDATA%\FreeCAD\v1-1\Mod`. [Installer guide and review status](docs/installer.md).
-It awaits its own user check; the published alpha.2 below remains unchanged.
+**[Download UniStation Windows installer](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe)**
+([v0.1.0-alpha.3 prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)).
+Choose components and installation directory; default `%APPDATA%\FreeCAD\v1-1\Mod`.
+[Instructions and review status](docs/installer.md). The wizard itself still
+awaits user validation; compilation and payload checks are complete.
 
 UniStation is an experimental Python workbench for FreeCAD. It brings a drafting
 workflow inspired by MicroStation to FreeCAD, with precise point input through
 [AxisFlow](https://github.com/LeonidWiebe/AxisFlow).
 
-Download the first experimental [v0.1.0-alpha.2 prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2).
-The full Windows package includes UniStation, AxisFlow theme_01, its sources
-and a separate-profile launcher. FreeCAD is installed separately; the Git
-repository itself tracks no AxisFlow binary.
+The installer includes UniStation and optional AxisFlow theme_01 with sources.
+FreeCAD is installed separately and started normally. No PowerShell launcher
+or separate candidate profile is required. The Git repository tracks no
+AxisFlow binary. The earlier ZIP release remains available in release history.
 
 The user reported successful testing in **FreeCAD 1.1.1**, the minimum checked
 in that reported scope. 1.1.4 remains the earlier reference environment.
 This does not establish every ABI combination or a complete regression.
-Read [release notes and installation](docs/release-v0.1.0-alpha.2.md),
+Read [release notes and installation](docs/release-v0.1.0-alpha.3.md),
 [compatibility](docs/compatibility-1.1.1.md) and [distribution](docs/distribution.md).
 
 ## Available features
@@ -44,15 +45,15 @@ placeholders. Layers and ByLayer behavior are not implemented. See
 
 ## Start here
 
-1. Download the [prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2)
-   and follow its [installation instructions](docs/release-v0.1.0-alpha.2.md).
+1. Download the [installer prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)
+   and follow its [installation instructions](docs/release-v0.1.0-alpha.3.md).
    For source-only installation, read [dependencies](docs/dependencies.md)
    and the [manual procedure](docs/installation.md).
 2. Follow [usage](docs/usage.md) with a compatible FreeCAD/AxisFlow environment.
 3. Read [testing status](docs/testing.md): publishing preserved tests does not
    mean they have been run against this snapshot.
 
-The full package supplies addons and a launcher, with FreeCAD external.
+The installer supplies addons, with FreeCAD external.
 Addon Manager installation is not yet provided or verified. User-reported
 testing covers the stated scope, without claiming every installation step.
 

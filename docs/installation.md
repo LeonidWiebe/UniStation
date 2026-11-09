@@ -1,6 +1,8 @@
 # Manual installation / Ручная установка
 
-For downloadable packages use the [v0.1.0-alpha.2 release instructions](release-v0.1.0-alpha.2.md).
+For new installations use the [v0.1.0-alpha.3 setup wizard](release-v0.1.0-alpha.3.md).
+It installs into the chosen normal Mod directory; no separate launcher is needed.
+The wizard still awaits its own user GUI check.
 The user reported successful FreeCAD 1.1.1 testing in the stated scope.
 The source-only procedure and pre-check notes below are preserved for reference.
 

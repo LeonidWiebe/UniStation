@@ -2,23 +2,24 @@
 
 [English](README.md)
 
-В ветке `installer/0.1.0-alpha.3` подготовлен обычный Windows-мастер установки:
-компоненты, каталог, удаление/восстановление. По умолчанию:
-`%APPDATA%\FreeCAD\v1-1\Mod`. [Инструкция и статус](docs/installer.md).
-Мастер ожидает собственной пользовательской пробы; опубликованный alpha.2 ниже сохранён.
+**[Скачать установщик UniStation для Windows](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe)**
+([предварительный релиз v0.1.0-alpha.3](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)).
+Выбор компонентов и каталога; по умолчанию `%APPDATA%\FreeCAD\v1-1\Mod`.
+[Инструкция и статус](docs/installer.md). Сам мастер ещё ожидает пользовательской
+проверки; сборка и статическая сверка завершены.
 
 UniStation — экспериментальный Python Workbench для FreeCAD с приёмами
 черчения, знакомыми по MicroStation. Основной ввод точек обеспечивает
 [AxisFlow](https://github.com/LeonidWiebe/AxisFlow).
 
-Доступен первый [предварительный релиз v0.1.0-alpha.2](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2).
-Полный Windows-пакет содержит UniStation, AxisFlow theme_01 с исходниками и
-запуск с отдельным профилем. FreeCAD устанавливается отдельно; сам Git-репозиторий
-не содержит бинарник AxisFlow.
+Установщик содержит UniStation и выбираемый AxisFlow theme_01 с исходниками.
+FreeCAD устанавливается отдельно и запускается обычным способом. Команда
+PowerShell и отдельный профиль кандидата не нужны. В Git-репозитории бинарника
+AxisFlow нет. Прежний ZIP-релиз сохранён в истории.
 
 Пользователь сообщил об успешном тестировании в **FreeCAD 1.1.1** — это минимум,
 проверенный в сообщённом объёме. Прежняя опорная среда — 1.1.4. Полная регрессия
-и произвольные ABI не заявлены. [Описание релиза и установка](docs/release-v0.1.0-alpha.2.md),
+и произвольные ABI не заявлены. [Описание релиза и установка](docs/release-v0.1.0-alpha.3.md),
 [совместимость](docs/compatibility-1.1.1.md), [состав поставки](docs/distribution.md).
 
 ## Что доступно
@@ -44,15 +45,15 @@ UniStation — экспериментальный Python Workbench для FreeCA
 
 ## С чего начать
 
-1. Скачайте [prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2)
-   и следуйте [описанию установки](docs/release-v0.1.0-alpha.2.md).
+1. Скачайте [инсталлятор](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)
+   и следуйте [описанию установки](docs/release-v0.1.0-alpha.3.md).
    Для установки из исходников — [зависимости](docs/dependencies.md) и
    [ручной порядок](docs/installation.md).
 2. Используйте [руководство](docs/usage.md) в совместимой среде FreeCAD/AxisFlow.
 3. Учитывайте [состояние проверок](docs/testing.md): сохранённые тесты
    не означают, что этот опубликованный снимок прошёл новый прогон.
 
-Полный пакет предоставляет дополнения и launcher; FreeCAD скачивается отдельно.
+Инсталлятор предоставляет дополнения; FreeCAD скачивается отдельно.
 Установка через Addon Manager пока не подготовлена и не проверена.
 Пользовательская проба принята в сообщённом объёме, без приписывания всех
 отдельных шагов установки.

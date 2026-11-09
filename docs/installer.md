@@ -1,6 +1,8 @@
-# Windows installer 0.1.0-alpha.3 — candidate
+# Windows installer v0.1.0-alpha.3
 
-The new NSIS wizard is being prepared for user review. It installs into an
+[Download the setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe).
+[Release notes and checksums](release-v0.1.0-alpha.3.md).
+The NSIS wizard is published as a prerelease for user review. It installs into an
 existing FreeCAD 1.1 profile; FreeCAD is external. Default parent directory:
 `%APPDATA%\FreeCAD\v1-1\Mod`. The installer is per-user, without elevation.
 
