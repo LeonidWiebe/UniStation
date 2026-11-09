@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "version": "0.1.0-alpha.1",
+  "status": "installation-candidate-user-validation-pending",
+  "product_baseline_commit": "0025de737dcf86152d2e8661ea164217ed2eb955",
+  "platform": "Windows x86_64",
+  "freecad": {
+    "version": "1.1.4",
+    "source_commit": "4fd3bf320d9566a27e60069fc8387448aaa3a094",
+    "python": "3.11.14",
+    "qt": "6.8.3",
+    "download": "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Windows-x86_64-py311.7z",
+    "archive_sha256": "4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d"
+  },
+  "axisflow": {
+    "version": "0.2.1",
+    "build_id": "theme_01",
+    "binary_sha256": "222678c61f86bb576160c8c939e394470abb2242449fc9d924ea44e9f580426e",
+    "source_commit": "7daa0ffd776eac559ed7468bec43911ec159adbb",
+    "source_repository": "https://github.com/LeonidWiebe/AxisFlow",
+    "source_association": "Reconstructed from accepted build manifests: 29 C++ files, CMake and QRC match; no independent rebuild",
+    "build_environment": "FreeCAD 1.1.1 / MSVC 19.44 / Python 3.11.14",
+    "license": "LGPL-2.1-or-later",
+    "public_v0_2_1_binary_is_different": true
+  },
+  "licenses": {
+    "UniStation": "GPL-3.0-only",
+    "AxisFlow": "LGPL-2.1-or-later"
+  },
+  "new_installation_tested": false,
+  "binary_rebuilt": false
+}

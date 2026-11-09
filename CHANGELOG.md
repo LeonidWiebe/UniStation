@@ -3,6 +3,16 @@
 This log describes the prototype's source state; these dates are not release
 tags or evidence of a new installation test.
 
+## 0.1.0-alpha.1 installation candidate — 2026-11-09
+
+- Added workbench metadata, explicit target ABI and deterministic ZIP builder.
+- Added separate-profile Windows launcher and manual installation check.
+- Associated accepted AxisFlow theme_01 with public source snapshot
+  7daa0ffd776eac559ed7468bec43911ec159adbb through build manifests.
+- Prepared local candidate archives with LGPL text and complete AxisFlow sources.
+- Runtime unchanged; no new binary build or GUI/automated behavioral runs.
+- User installation acceptance and GitHub Release remain pending.
+
 ## Initial publication preparation — 2026-11-09
 
 - Prepared the source snapshot and public English/Russian documentation.

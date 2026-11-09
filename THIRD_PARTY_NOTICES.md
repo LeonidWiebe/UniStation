@@ -21,8 +21,12 @@ TS sources. No proprietary MicroStation code or icon files are included.
 See [FreeCAD LICENSE](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/LICENSE),
 [AxisFlow LICENSE](https://github.com/LeonidWiebe/AxisFlow/blob/5dda554759d813559d94416286014f0cb6fc780e/LICENSE)
 and [AxisFlow package.xml](https://github.com/LeonidWiebe/AxisFlow/blob/5dda554759d813559d94416286014f0cb6fc780e/package.xml).
-These source references do not identify the exact source commit of the active
-local AxisFlow binary. That remains a separate reproducibility issue.
+The packaging audit subsequently associated the accepted theme_01 binary with
+[source snapshot 7daa0ff](https://github.com/LeonidWiebe/AxisFlow/tree/7daa0ffd776eac559ed7468bec43911ec159adbb)
+by matching accepted source manifests, not by an independent rebuild.
+The separate local candidate includes that binary, all 100 tracked source
+files, LGPL text and build information. The repository and workbench-only ZIP
+include no AxisFlow binary. See [distribution](docs/distribution.md).
 
 Draft snap icons are requested by their FreeCAD resource identifiers at runtime;
 their image files are not copied here. Future binary bundles require an inventory
@@ -37,4 +41,7 @@ describes workflow inspiration and does not imply affiliation or endorsement.
 FreeCAD, AxisFlow и их зависимости в этот репозиторий не включены и сохраняют
 свои лицензии. Указанные commits — опорные версии для анализа API, не доказанное
 происхождение используемого локально бинарника AxisFlow. Перед поставкой
-бинарного комплекта потребуется отдельная инвентаризация его состава.
+бинарного комплекта выполнена отдельная инвентаризация: локальный кандидат
+содержит принятый AxisFlow theme_01, полный исходный снимок 7daa0ff,
+LGPL и сведения о сборке. Соответствие исходников восстановлено по принятым
+манифестам; независимой пересборки и новой проверки установки не было.

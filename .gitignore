@@ -7,6 +7,8 @@ user-data/
 test-output/
 handoff/
 tmp/
+dist/
+candidate-profile/
 *.log
 *.FCStd
 *.FCStd1

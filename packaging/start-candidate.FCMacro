@@ -1,0 +1,7 @@
+# User-invoked startup only; no document creation or automated input.
+try:
+    Gui.activateWorkbench("DraftWorkbench")
+    Gui.activateWorkbench("UniStationWorkbench")
+    App.Console.PrintMessage("UniStation installation candidate: create or open a document.\n")
+except Exception as exc:
+    App.Console.PrintError("UniStation candidate could not activate: " + str(exc) + "\n")

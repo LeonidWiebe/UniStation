@@ -9,7 +9,10 @@ workflow inspired by MicroStation to FreeCAD, with precise point input through
 This is a source snapshot of a working prototype. The documented local runtime
 is Windows with FreeCAD 1.1.4. A downloadable, independently verified installation
 bundle is still being prepared; this repository does not include FreeCAD or an
-AxisFlow binary.
+AxisFlow binary. The packaging branch prepares an installation candidate;
+see [distribution status](docs/distribution.md), [instructions](packaging/INSTALL.md)
+and the [user installation check](packaging/USER-CHECK.md). No GitHub Release
+or clean-install acceptance is implied.
 
 ## Available features
 
