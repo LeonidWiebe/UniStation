@@ -1,7 +1,9 @@
 {
   "schema_version": 1,
-  "version": "0.1.0-alpha.2",
-  "status": "installation-candidate-user-validation-pending",
+  "version": "0.1.0-alpha.3",
+  "status": "windows-installer-user-validation-pending",
+  "delivery": "NSIS Windows wizard; FreeCAD installed separately",
+  "default_mod_directory": "%APPDATA%\\FreeCAD\\v1-1\\Mod",
   "product_baseline_commit": "0025de737dcf86152d2e8661ea164217ed2eb955",
   "platform": "Windows x86_64",
   "freecad": {
@@ -20,7 +22,7 @@
       "download": "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.1/FreeCAD_1.1.1-Windows-x86_64-py311.7z",
       "archive_sha256": "aef51acb6725d5667bbae73494d04794a1e1725e17c6589650b044c15808144f",
       "archive_sha256_source": "official release assets; archive not downloaded by this audit",
-      "status": "static API review passed; official binary ABI and user installation pending",
+      "status": "user reported successful UniStation testing in 1.1.1; new Windows installer pending",
       "python_family": "3.11",
       "exact_bundled_library_versions_verified": false
     },

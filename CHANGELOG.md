@@ -1,5 +1,15 @@
 # Changes
 
+## 0.1.0-alpha.3 Windows installer candidate — 2026-11-09
+
+- Added a per-user RU/EN wizard: UniStation/AxisFlow selection, documentation,
+  Start menu links, custom parent Mod directory and uninstall component selection.
+- Default Mod directory: `%APPDATA%\FreeCAD\v1-1\Mod`. FreeCAD stays external.
+- Retained same-volume backups, ownership checks and restoration; no recursive
+  deletion of the shared Mod tree or changes to FreeCAD configuration.
+- Product runtime/AxisFlow unchanged; no GUI or automated behavioral runs.
+- Setup user acceptance/publication pending; alpha.2 release assets unchanged.
+
 This log describes the prototype's source state; these dates are not release
 tags or evidence of a new installation test.
 

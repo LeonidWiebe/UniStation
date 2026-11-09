@@ -2,6 +2,11 @@
 
 [Русский](README.ru.md)
 
+The `installer/0.1.0-alpha.3` branch adds a Windows setup wizard candidate with
+component/directory selection and uninstall/restore. Default destination:
+`%APPDATA%\FreeCAD\v1-1\Mod`. [Installer guide and review status](docs/installer.md).
+It awaits its own user check; the published alpha.2 below remains unchanged.
+
 UniStation is an experimental Python workbench for FreeCAD. It brings a drafting
 workflow inspired by MicroStation to FreeCAD, with precise point input through
 [AxisFlow](https://github.com/LeonidWiebe/AxisFlow).

@@ -2,6 +2,11 @@
 
 [English](README.md)
 
+В ветке `installer/0.1.0-alpha.3` подготовлен обычный Windows-мастер установки:
+компоненты, каталог, удаление/восстановление. По умолчанию:
+`%APPDATA%\FreeCAD\v1-1\Mod`. [Инструкция и статус](docs/installer.md).
+Мастер ожидает собственной пользовательской пробы; опубликованный alpha.2 ниже сохранён.
+
 UniStation — экспериментальный Python Workbench для FreeCAD с приёмами
 черчения, знакомыми по MicroStation. Основной ввод точек обеспечивает
 [AxisFlow](https://github.com/LeonidWiebe/AxisFlow).
