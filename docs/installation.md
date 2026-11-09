@@ -1,5 +1,9 @@
 # Manual installation / Ручная установка
 
+For downloadable packages use the [v0.1.0-alpha.2 release instructions](release-v0.1.0-alpha.2.md).
+The user reported successful FreeCAD 1.1.1 testing in the stated scope.
+The source-only procedure and pre-check notes below are preserved for reference.
+
 [English overview](../README.md) · [Русское описание](../README.ru.md)
 
 **Packaging branch update, 2026-11-09:** alpha.2 admits Windows/FreeCAD 1.1.1

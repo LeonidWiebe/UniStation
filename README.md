@@ -6,16 +6,16 @@ UniStation is an experimental Python workbench for FreeCAD. It brings a drafting
 workflow inspired by MicroStation to FreeCAD, with precise point input through
 [AxisFlow](https://github.com/LeonidWiebe/AxisFlow).
 
-This is a source snapshot of a working prototype. The documented local runtime
-is Windows with FreeCAD 1.1.4. A downloadable, independently verified installation
-bundle is still being prepared; this repository does not include FreeCAD or an
-AxisFlow binary. The packaging branch prepares an installation candidate;
-see [distribution status](docs/distribution.md), [instructions](packaging/INSTALL.md)
-and the [user installation check](packaging/USER-CHECK.md). No GitHub Release
-or clean-install acceptance is implied.
+Download the first experimental [v0.1.0-alpha.2 prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2).
+The full Windows package includes UniStation, AxisFlow theme_01, its sources
+and a separate-profile launcher. FreeCAD is installed separately; the Git
+repository itself tracks no AxisFlow binary.
 
-Alpha.2 admits FreeCAD **1.1.1 as an experimental test minimum**; 1.1.4 remains
-the reference runtime. [Static review and remaining user check](docs/compatibility-1.1.1.md).
+The user reported successful testing in **FreeCAD 1.1.1**, the minimum checked
+in that reported scope. 1.1.4 remains the earlier reference environment.
+This does not establish every ABI combination or a complete regression.
+Read [release notes and installation](docs/release-v0.1.0-alpha.2.md),
+[compatibility](docs/compatibility-1.1.1.md) and [distribution](docs/distribution.md).
 
 ## Available features
 
@@ -39,15 +39,17 @@ placeholders. Layers and ByLayer behavior are not implemented. See
 
 ## Start here
 
-1. Read [dependencies](docs/dependencies.md) and the
-   [manual installation procedure](docs/installation.md).
+1. Download the [prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2)
+   and follow its [installation instructions](docs/release-v0.1.0-alpha.2.md).
+   For source-only installation, read [dependencies](docs/dependencies.md)
+   and the [manual procedure](docs/installation.md).
 2. Follow [usage](docs/usage.md) with a compatible FreeCAD/AxisFlow environment.
 3. Read [testing status](docs/testing.md): publishing preserved tests does not
    mean they have been run against this snapshot.
 
-Manual installation is documented for experienced FreeCAD users; it has not
-been independently verified on a clean computer. Addon Manager installation,
-a portable application bundle and a turnkey installer are not provided here.
+The full package supplies addons and a launcher, with FreeCAD external.
+Addon Manager installation is not yet provided or verified. User-reported
+testing covers the stated scope, without claiming every installation step.
 
 ## Development
 

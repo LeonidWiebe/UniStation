@@ -3,6 +3,16 @@
 This log describes the prototype's source state; these dates are not release
 tags or evidence of a new installation test.
 
+## v0.1.0-alpha.2 prerelease — 2026-11-09
+
+- User reported successful UniStation testing with FreeCAD 1.1.1, accepted in
+  the reported scope; exact Python/Qt/OS and individual scenarios not supplied.
+- Published packaging metadata, launcher and documentation, plus the original
+  alpha.2 ZIP assets and SHA256SUMS. Archive bytes remain from build commit
+  25fca51; embedded pending text is the pre-check build state.
+- Updated public download/install guidance and release notes. Product runtime,
+  AxisFlow, licenses and known limitations are unchanged. No automated runs.
+
 ## 0.1.0-alpha.2 minimum-version candidate — 2026-11-09
 
 - Admitted FreeCAD 1.1.1 as an experimental test minimum; maximum remains 1.1.4.

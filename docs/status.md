@@ -5,6 +5,12 @@ This snapshot does not claim a complete regression or a clean-machine install.
 
 ## Reported user acceptance
 
+On 2026-11-09 the user also reported successful UniStation testing in FreeCAD
+**1.1.1**, following the minimum-version candidate. This establishes the
+user-tested minimum in the reported scope. Exact Python/Qt/OS and individual
+steps were not enumerated; it does not close the limitations below or certify
+all builds in 1.1.1–1.1.4. [Prerelease notes](release-v0.1.0-alpha.2.md).
+
 The user reported successful checks of English/Russian translation after the
 startup correction, active attributes, the snapping toolbar, preview styling,
 operation settings and the separate coordinate window, changing attributes

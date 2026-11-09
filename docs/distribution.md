@@ -1,6 +1,8 @@
-# Installation candidate 0.1.0-alpha.2 / Кандидат установки
+# Prerelease v0.1.0-alpha.2 / Поставка
 
-This branch prepares packages; it has not been published as a GitHub Release.
+[Download prerelease v0.1.0-alpha.2](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2).
+The user reported successful testing in FreeCAD 1.1.1, accepted in the reported
+scope. [Release notes, downloads and installation](release-v0.1.0-alpha.2.md).
 Product Python, SVG and TS/QM files remain byte-identical to the initial source
 publication, commit `0025de737dcf86152d2e8661ea164217ed2eb955`.
 
@@ -15,13 +17,15 @@ publication, commit `0025de737dcf86152d2e8661ea164217ed2eb955`.
 - `SHA256SUMS.txt`: checksums of those exact archives.
 
 Read [installation instructions](../packaging/INSTALL.md) and the short
-[user check](../packaging/USER-CHECK.md). These are candidate artifact names,
-not existing download links or a claim of installation acceptance.
+[user check](../packaging/USER-CHECK.md). Assets keep their original candidate
+filenames and bytes. They were built before the user response, so pending text
+inside the ZIP is historical. The release notes record the subsequent result,
+without claiming unreported steps or all ABI combinations.
 
 ## Metadata and build tool
 
 Repository-root package.xml declares UniStation's inner workbench directory,
-GPL-3.0-only, experimental minimum FreeCAD 1.1.1, declared maximum 1.1.4,
+GPL-3.0-only, user-tested minimum FreeCAD 1.1.1, declared maximum 1.1.4,
 and AxisFlow. [Minimum-version review](compatibility-1.1.1.md).
 A version dependency alone cannot
 verify a C++ addon ABI. Addon Manager listing/installation has not been tested.
@@ -43,15 +47,16 @@ No automatic GUI/input checks were performed.
 
 ## По-русски
 
-Это подготовка кандидата, а не опубликованный GitHub Release. Полный ZIP
-предназначен для новой пользовательской пробы установки на Windows x64 с
-минимальной тестовой версией FreeCAD 1.1.1 и опорной средой 1.1.4.
+Это предварительный релиз. Пользователь сообщил об успешной пробе FreeCAD 1.1.1;
+результат принят в сообщённом объёме. Полный ZIP предназначен для Windows x64
+с минимальной проверенной пользователем версией 1.1.1 и опорной средой 1.1.4.
 Метаданные разрешают диапазон 1.1.1–1.1.4 для пробы, но совместимость каждой
 версии не подтверждена. Конфигурация отдельная, личные настройки не
 копируются. FreeCAD скачивается отдельно. Рабочий бинарник AxisFlow theme_01
 отличается от публичного релиза v0.2.1; приложены соответствующий исходный
 снимок, LGPL и сведения о сборке. Побитовая воспроизводимость бинарника новой
-сборкой не проверялась. После пользовательской пробы можно готовить GitHub
-Release с проверенными архивами и контрольными суммами.
+сборкой не проверялась. ZIP и контрольные суммы сохранены после пробы.
+Для точного воспроизведения ZIP используйте build commit 25fca51, а не
+последующие изменения документации под release tag.
 
 Alpha.1 archives remain unchanged as the previous 1.1.4-only candidate.

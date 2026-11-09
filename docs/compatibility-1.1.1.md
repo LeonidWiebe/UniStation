@@ -1,5 +1,12 @@
 # FreeCAD 1.1.1 — experimental test minimum
 
+**Subsequent user result, 2026-11-09:** the user reported successful testing in
+FreeCAD **1.1.1**. This is the user-tested minimum in the reported scope; no
+repeat is required. Exact Python/Qt/OS, archive identity and individual steps
+were not supplied, so no blanket ABI certification or full regression is
+implied. The static review below records the pre-check state.
+See [prerelease notes](release-v0.1.0-alpha.2.md) for the current distribution.
+
 **Conclusion, 2026-11-09:** FreeCAD 1.1.1 can be admitted as an experimental
 minimum for a user installation check. This is a static compatibility finding,
 not acceptance of the official Windows binary runtime.

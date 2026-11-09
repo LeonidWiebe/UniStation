@@ -1,5 +1,10 @@
 # Dependencies and compatibility / Зависимости
 
+**User result, 2026-11-09:** successful testing in FreeCAD 1.1.1 was reported
+and accepted in that scope. Exact runtime library versions were not supplied;
+no general ABI guarantee follows. [Prerelease](release-v0.1.0-alpha.2.md).
+The earlier preparation status below is retained as build context.
+
 **Alpha.2:** experimental minimum for a new user check is FreeCAD **1.1.1**;
 the declared maximum remains 1.1.4. This does not certify the range or the
 official 1.1.1 binary ABI. Read the [static compatibility review](compatibility-1.1.1.md).
