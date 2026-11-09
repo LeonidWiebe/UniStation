@@ -1,87 +1,55 @@
-# Manual installation / Ручная установка
+# Installation / Установка
 
-For new installations use the [v0.1.0-alpha.3 setup wizard](release-v0.1.0-alpha.3.md).
-It installs into the chosen normal Mod directory; no separate launcher is needed.
-The wizard still awaits its own user GUI check.
-The user reported successful FreeCAD 1.1.1 testing in the stated scope.
-The source-only procedure and pre-check notes below are preserved for reference.
+## Windows installer — recommended
 
-[English overview](../README.md) · [Русское описание](../README.ru.md)
+Download the [alpha.3 setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe)
+and close FreeCAD. Choose language, components and the parent **Mod** directory.
+Default: `%APPDATA%\FreeCAD\v1-1\Mod`. Setup creates UniStation/AxisFlow inside it.
+Start FreeCAD normally, select UniStation, then create/open a document.
+FreeCAD is external; no PowerShell command or separate candidate profile is needed.
 
-**Packaging branch update, 2026-11-09:** alpha.2 admits Windows/FreeCAD 1.1.1
-as the experimental test minimum, with 1.1.4 as reference. See
-[compatibility](compatibility-1.1.1.md). For that candidate use
-[INSTALL](../packaging/INSTALL.md) and [USER-CHECK](../packaging/USER-CHECK.md).
-The conventional source-only procedure below remains available; it supplies
-no AxisFlow binary. Addon Manager installation has not been verified.
+The setup/uninstall/restore workflow still requires runtime validation.
+It is a prerelease and the executable is unsigned. Read the
+[installer guide](../packaging/installer/USER-GUIDE.md),
+[release notes](release-v0.1.0-alpha.3.md) and [dependencies](dependencies.md).
+For a custom/portable profile, choose its actual Mod directory. Setup does not
+auto-detect FreeCAD.exe or establish arbitrary binary ABI compatibility.
 
-## English
+## Manual source installation — advanced
 
-This procedure describes the conventional FreeCAD user-module layout. It has
-been reviewed against FreeCAD 1.1.4's module-loading source, but a clean-machine
-installation of this published snapshot has not yet been user-verified.
+Before copying files, close FreeCAD and preserve existing addon folders.
+Find the profile's data directory beforehand with `App.getUserAppDataDir()`.
+Copy the complete repository checkout into a folder such as:
 
-1. Install FreeCAD and a compatible AxisFlow separately. Read
-   [dependencies](dependencies.md) first: this repository supplies neither the
-   tested AxisFlow binary nor a reproducible build of it. If you cannot obtain
-   a compatible module, stop here; the source snapshot alone is insufficient
-   to run UniStation.
-2. In FreeCAD's Python console, read `App.getUserAppDataDir()` to find the
-   actual user data directory. Close FreeCAD before adding module files.
-   Existing installations and profiles should be preserved.
-3. Copy the **inner `UniStation` directory** from this repository into the
-   user data directory's `Mod` directory. The resulting layout is:
+```text
+<FreeCAD user data>/Mod/UniStation/
+  package.xml
+  LICENSE
+  UniStation/
+    InitGui.py
+    unistation/...
+<FreeCAD user data>/Mod/AxisFlow/
+  InitGui.py
+  AxisFlow.pyd
+  ... compatible separate AxisFlow distribution ...
+```
 
-   ```text
-   <FreeCAD user data>/
-     Mod/
-       UniStation/
-         InitGui.py
-         unistation/
-           gui.py
-           icons/
-           translations/
-       AxisFlow/
-         ... separately installed compatible module ...
-   ```
-
-   Do not copy the entire repository as `Mod/UniStation`: that adds an extra
-   directory level above `InitGui.py`. If the destination exists, preserve it
-   and resolve which version to use before replacing files.
-4. Restart FreeCAD. Select Draft, then UniStation. Create or open a document;
-   activating the workbench does not start drawing automatically.
-5. Follow [usage](usage.md). Read [limitations](status.md), especially the
-   unresolved Circle lifecycle observation, before switching document/workbench
-   during an active command.
-
-Other operating systems, FreeCAD versions and AxisFlow binaries have not been
-validated by this source-publication work. Addon Manager installation is not
-advertised. The development computer's portable launcher is intentionally not
-included because it depends on a local runtime and profile.
-
-FreeCAD's pinned source references:
-[module paths](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/App/FreeCADInit.py),
-[InitGui loading](https://github.com/FreeCAD/FreeCAD/blob/4fd3bf320d9566a27e60069fc8387448aaa3a094/src/Gui/FreeCADGuiInit.py).
+The root package.xml points to the inner UniStation directory. The loader uses
+that metadata, so the repository layout is valid. The older workbench-only ZIP
+uses a different **flat** layout: InitGui.py and package.xml directly inside
+Mod/UniStation, with subdirectory `./`. Keep each package's metadata/layout
+together; do not mix files from different versions. Manual source copying does
+not supply AxisFlow. The old separate-profile ZIP workflow is documented in
+[alpha.2 release notes](release-v0.1.0-alpha.2.md).
 
 ## По-русски
 
-Это порядок ручного размещения модуля FreeCAD, сверенный с исходниками 1.1.4.
-Установка опубликованного снимка на чистом компьютере ещё не проверена
-пользователем.
+Основной способ — EXE: выбрать компоненты и родительский Mod, затем запустить
+FreeCAD привычным способом. Подробности — в руководстве мастера выше. При ручной
+установке целого checkout сохраняйте корневой package.xml и внутренний UniStation;
+для плоского Workbench ZIP сохраняйте его собственную структуру/метаданные.
+Совместимый AxisFlow требуется отдельно. Addon Manager пока не поддержан как
+проверенный канал установки. Перед сменой документа завершайте Circle;
+ограничение AF-002 не объявлено исправленным.
 
-1. Отдельно установите FreeCAD и совместимый AxisFlow. Прочитайте
-   [зависимости](dependencies.md). Бинарника AxisFlow и его воспроизводимой
-   сборки в репозитории нет. Без совместимого AxisFlow работа UniStation
-   не обеспечена.
-2. Узнайте действительный каталог пользователя через
-   `App.getUserAppDataDir()` в Python-консоли FreeCAD. Затем закройте FreeCAD.
-3. Скопируйте внутренний каталог `UniStation` из репозитория в `Mod` этого
-   каталога пользователя. `InitGui.py` должен оказаться непосредственно в
-   `Mod/UniStation`, как на схеме выше. Существующую версию сначала сохраните;
-   не смешивайте файлы разных редакций.
-4. Перезапустите FreeCAD, выберите Draft, затем UniStation. Создайте или
-   откройте документ и используйте [руководство](usage.md).
-
-Локальный portable-launcher разработчика не включён: он требует локального
-рабочего окружения. Готового установщика и подтверждения других ОС/версий
-FreeCAD в этой публикации нет.
+Loader reference: [FreeCAD 1.1.1 GUI init](https://github.com/FreeCAD/FreeCAD/blob/0108fd4b4850cc46e625b60e53cea7a7bbe69f8d/src/Gui/FreeCADGuiInit.py).

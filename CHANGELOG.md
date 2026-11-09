@@ -1,5 +1,11 @@
 # Changes
 
+## Documentation refresh — 2026-11-09
+
+- Refreshed current status, installer/source installation, dependencies and author voice.
+- Publication confirmed; installer runtime validation remains pending.
+- Versioned EXE/ZIP/tag snapshots, runtime code and licenses are unchanged.
+
 ## v0.1.0-alpha.3 Windows installer prerelease — 2026-11-09
 
 - Added a per-user RU/EN wizard: UniStation/AxisFlow selection, documentation,
@@ -16,8 +22,8 @@ tags or evidence of a new installation test.
 
 ## v0.1.0-alpha.2 prerelease — 2026-11-09
 
-- User reported successful UniStation testing with FreeCAD 1.1.1, accepted in
-  the reported scope; exact Python/Qt/OS and individual scenarios not supplied.
+- Tested with FreeCAD 1.1.1; this does not establish a full regression or
+  certify every Python/Qt/OS combination.
 - Published packaging metadata, launcher and documentation, plus the original
   alpha.2 ZIP assets and SHA256SUMS. Archive bytes remain from build commit
   25fca51; embedded pending text is the pre-check build state.
@@ -31,7 +37,8 @@ tags or evidence of a new installation test.
   checked custom profile/launcher support and Python 3.11 syntax.
 - Added official 1.1.1 download identity and a separate-profile user check.
 - Product runtime and AxisFlow unchanged; official 1.1.1 binary ABI/load and
-  installation remain unverified. No GUI or automated behavioral runs.
+  installation were pending at candidate build time. The subsequent product
+  check succeeded; it does not validate the later installer. No automated runs.
 - Alpha.1 archives retained unchanged; no GitHub Release published.
 
 ## 0.1.0-alpha.1 installation candidate — 2026-11-09
@@ -74,5 +81,5 @@ tags or evidence of a new installation test.
 9 ноября подготовлены исходный снимок и публичные документы, выбрана GPL-3.0-only.
 Поведение продукта не менялось, новых тестовых прогонов не было.
 Состояние на 6 ноября включает живые атрибуты, отдельное окно координат,
-привязки и актуальную плоскость компаса. Подробные границы пользовательской
-приёмки и ожидающие подтверждения изменения — в [статусе](docs/status.md).
+привязки и актуальную плоскость компаса. Подробные границы завершённых
+проверок и ожидающие подтверждения изменения — в [статусе](docs/status.md).

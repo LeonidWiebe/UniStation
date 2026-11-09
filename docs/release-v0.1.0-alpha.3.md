@@ -42,25 +42,24 @@ FreeCAD устанавливается отдельно. Команда PowerShe
 Удаление доступно через список приложений Windows, с выбором компонентов.
 При наличии резервной копии прежние папки восстанавливаются. Убранные версии
 и добавленные файлы остаются в служебном каталоге. Общий Mod рекурсивно не
-удаляется. Подробности — в [инструкции](https://github.com/LeonidWiebe/UniStation/blob/v0.1.0-alpha.3/packaging/installer/USER-GUIDE.md).
+удаляется. Подробности — в [инструкции](https://github.com/LeonidWiebe/UniStation/blob/main/packaging/installer/USER-GUIDE.md).
 
 ## Проверки и совместимость
 
-**Мастер установки/удаления ещё не проходил пользовательскую GUI-проверку.**
+**Проверка установки/удаления выполнением ещё не завершена.**
 Выполнены сборка NSIS 3.12 без предупреждений, извлечение EXE как архива и
 сверка 94 вложенных файлов, PE manifest и контрольных сумм. Исполнение
 установки, удаления и аварийного восстановления этим не подтверждается.
 Исполняемый файл не имеет подписи Authenticode.
 
-Ранее пользователь сообщил об успешной работе UniStation в FreeCAD **1.1.1**
-в сообщённом объёме; прежняя опорная среда — 1.1.4. Этот результат не является
+Проверена работа UniStation в FreeCAD **1.1.1**; прежняя опорная среда — 1.1.4. Этот результат не является
 отдельной приёмкой нового мастера. Бинарный AxisFlow рассчитан на Windows x64 /
 Python 3.11 и совместимые библиотеки FreeCAD; весь диапазон/ABI не сертифицирован.
-[Короткая проверка мастера](https://github.com/LeonidWiebe/UniStation/blob/v0.1.0-alpha.3/packaging/installer/USER-CHECK.md).
+[Короткая проверка мастера](https://github.com/LeonidWiebe/UniStation/blob/main/packaging/installer/USER-CHECK.md).
 
 45 runtime-файлов UniStation и поставка принятого AxisFlow theme_01 не менялись.
 Сохранены отключённые заготовки и известные ограничения, включая AF-002 и
-неподтверждённые отдельно RESET-001/TEST-003/004. [Состояние продукта](https://github.com/LeonidWiebe/UniStation/blob/v0.1.0-alpha.3/docs/status.md).
+неподтверждённые отдельно RESET-001/TEST-003/004. [Состояние продукта](https://github.com/LeonidWiebe/UniStation/blob/main/docs/status.md).
 
 ## Лицензии и исходники
 
@@ -83,5 +82,5 @@ recommended download. Choose components and the parent Mod directory; default
 external. Per-user installation, retained backups and component uninstall/restore.
 **Installer/uninstaller GUI behavior is not yet user-validated**; only compilation,
 payload/hash and PE inspection were performed. The executable is unsigned.
-The earlier user-reported FreeCAD 1.1.1 result concerns the unchanged product,
+The completed FreeCAD 1.1.1 check concerns the unchanged product,
 not this new wizard. GPL-3.0-only / LGPL-2.1-or-later; sources included.

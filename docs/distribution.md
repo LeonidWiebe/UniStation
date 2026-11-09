@@ -1,70 +1,41 @@
 # Distribution / Поставка
 
-**Recommended:** [Windows installer v0.1.0-alpha.3](release-v0.1.0-alpha.3.md),
-with component/directory selection and default `%APPDATA%\FreeCAD\v1-1\Mod`.
-FreeCAD is external and started normally; no PowerShell command is required.
-The new wizard's runtime GUI validation is pending. Sources/checksums are in
-the release. The previous ZIP delivery below is retained as history/build input.
+Recommended download: **[Windows setup v0.1.0-alpha.3](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe)**.
+The release also provides the installer-source ZIP and SHA256SUMS.
+[Release notes](release-v0.1.0-alpha.3.md), [installation](installation.md).
 
-## Previous ZIP delivery — v0.1.0-alpha.2
+Choose components and the parent Mod directory (default
+`%APPDATA%\FreeCAD\v1-1\Mod`), then start FreeCAD normally. FreeCAD is external.
+The source repository has no AxisFlow binary; setup includes the separately
+replaceable theme_01 module, LGPL and its complete source ZIP when selected.
 
-[Download prerelease v0.1.0-alpha.2](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.2).
-The user reported successful testing in FreeCAD 1.1.1, accepted in the reported
-scope. [Release notes, downloads and installation](release-v0.1.0-alpha.2.md).
-Product Python, SVG and TS/QM files remain byte-identical to the initial source
-publication, commit `0025de737dcf86152d2e8661ea164217ed2eb955`.
+The installer was compiled with NSIS 3.12 and inspected as PE/archive. Server
+digests and anonymous downloads match the saved release files. Runtime
+installation/uninstallation/rollback validation remains pending. The EXE is unsigned.
 
-- `UniStation-0.1.0-alpha.2-workbench.zip`: UniStation alone, with InitGui.py
-  directly inside UniStation/. AxisFlow is needed separately.
-- `UniStation-0.1.0-alpha.2-Windows-FC1.1-candidate.zip`: local installation
-  candidate with accepted AxisFlow theme_01, its complete source archive and
-  LGPL notice, and a separate-profile launcher. FreeCAD is external.
-- `AxisFlow-source-7daa0ffd776eac559ed7468bec43911ec159adbb.zip`: all 100 tracked
-  files of the source snapshot associated with the accepted theme build through
-  documented source equivalence. Not an independent binary rebuild.
-- `SHA256SUMS.txt`: checksums of those exact archives.
+## Source and rebuilding
 
-Read [installation instructions](../packaging/INSTALL.md) and the short
-[user check](../packaging/USER-CHECK.md). Assets keep their original candidate
-filenames and bytes. They were built before the user response, so pending text
-inside the ZIP is historical. The release notes record the subsequent result,
-without claiming unreported steps or all ABI combinations.
+The installer source/build instructions are under packaging/installer and
+tools/build-installer.py. Exact released installer source state is commit
+`290f4d5254bad762473be7919b5da684106a09be`; later commits may update documentation.
+The source ZIP asset preserves the build snapshot. Documentation refreshes do
+not rebuild or replace the published EXE under its existing name/hash.
 
-## Metadata and build tool
+The older tools/build-package.py produces a workbench-only ZIP with flat module
+metadata. It does not download/build AxisFlow. This is separate from the Windows
+wizard. Read [installer build instructions](../packaging/installer/BUILD.md).
 
-Repository-root package.xml declares UniStation's inner workbench directory,
-GPL-3.0-only, user-tested minimum FreeCAD 1.1.1, declared maximum 1.1.4,
-and AxisFlow. [Minimum-version review](compatibility-1.1.1.md).
-A version dependency alone cannot
-verify a C++ addon ABI. Addon Manager listing/installation has not been tested.
+## Earlier alpha.2
 
-```text
-python tools/build-package.py --output-dir dist
-```
-
-This tool builds only the workbench ZIP. It uses Python's standard library,
-parses Python/XML without executing product code, fixes ZIP timestamps and
-entry order, and refuses to replace a different archive with the same name.
-It flattens only package metadata; runtime code/resources remain unchanged.
-It neither downloads nor builds AxisFlow. The full local candidate is assembled
-separately from the accepted binary and audited public source snapshot.
-
-The full candidate starts a user-invoked visible FreeCAD with separate config,
-data and logs. Existing addons and normal profiles are not installation targets.
-No automatic GUI/input checks were performed.
+The previous ZIP/PowerShell distribution, workbench-only ZIP and standalone
+AxisFlow sources remain in [alpha.2](release-v0.1.0-alpha.2.md). The full ZIP is
+the pinned input of the current installer build, so it is retained. Its original
+candidate/pending wording records the build-time state. For new installations,
+use alpha.3. Old versions and immutable build/tag snapshots retain their own text.
 
 ## По-русски
 
-Это предварительный релиз. Пользователь сообщил об успешной пробе FreeCAD 1.1.1;
-результат принят в сообщённом объёме. Полный ZIP предназначен для Windows x64
-с минимальной проверенной пользователем версией 1.1.1 и опорной средой 1.1.4.
-Метаданные разрешают диапазон 1.1.1–1.1.4 для пробы, но совместимость каждой
-версии не подтверждена. Конфигурация отдельная, личные настройки не
-копируются. FreeCAD скачивается отдельно. Рабочий бинарник AxisFlow theme_01
-отличается от публичного релиза v0.2.1; приложены соответствующий исходный
-снимок, LGPL и сведения о сборке. Побитовая воспроизводимость бинарника новой
-сборкой не проверялась. ZIP и контрольные суммы сохранены после пробы.
-Для точного воспроизведения ZIP используйте build commit 25fca51, а не
-последующие изменения документации под release tag.
-
-Alpha.1 archives remain unchanged as the previous 1.1.4-only candidate.
+Основная установка — EXE alpha.3 с выбором компонентов и каталога.
+Старый alpha.2 сохранён для истории и сборки. Исходники/лицензии включены,
+FreeCAD устанавливается отдельно. Работа в 1.1.1 проверена, сам мастер ещё
+ожидает ручной проверки. Addon Manager как канал установки пока не подготовлен.

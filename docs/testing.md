@@ -30,7 +30,7 @@ automation or authorize a run. Do not use broad discovery as evidence that the
 snapshot is validated. Adapt stale contracts and agree a suitable runtime and
 scope before any future automation. No GitHub Actions workflow is included.
 
-Historical user checks and their limits are described in [status](status.md).
+Completed manual checks and their limits are described in [status](status.md).
 They are distinct from a regression run of the eventual public commit and
 from a clean-machine installation check.
 
@@ -46,5 +46,5 @@ from a clean-machine installation check.
 включены. Все исходники остаются также в рабочем проекте.
 
 TEST-003/004 требуют адаптации при возврате к автоматизации. Наличие тестов
-не означает успешный прогон или включение CI. Пользовательские результаты
-относятся к объёму записанных приёмок, а не к полной регрессии этого commit.
+не означает успешный прогон или включение CI. Результаты ручных проб подтверждают только проверенные сценарии,
+а не полную регрессию текущего commit.

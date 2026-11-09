@@ -6,7 +6,7 @@
 ([v0.1.0-alpha.3 prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)).
 Choose components and installation directory; default `%APPDATA%\FreeCAD\v1-1\Mod`.
 [Instructions and review status](docs/installer.md). The wizard itself still
-awaits user validation; compilation and payload checks are complete.
+awaits runtime validation; compilation and payload checks are complete.
 
 UniStation is an experimental Python workbench for FreeCAD. It brings a drafting
 workflow inspired by MicroStation to FreeCAD, with precise point input through
@@ -17,8 +17,7 @@ FreeCAD is installed separately and started normally. No PowerShell launcher
 or separate candidate profile is required. The Git repository tracks no
 AxisFlow binary. The earlier ZIP release remains available in release history.
 
-The user reported successful testing in **FreeCAD 1.1.1**, the minimum checked
-in that reported scope. 1.1.4 remains the earlier reference environment.
+Tested with **FreeCAD 1.1.1**, the checked minimum. 1.1.4 remains the earlier reference environment.
 This does not establish every ABI combination or a complete regression.
 Read [release notes and installation](docs/release-v0.1.0-alpha.3.md),
 [compatibility](docs/compatibility-1.1.1.md) and [distribution](docs/distribution.md).
@@ -54,8 +53,7 @@ placeholders. Layers and ByLayer behavior are not implemented. See
    mean they have been run against this snapshot.
 
 The installer supplies addons, with FreeCAD external.
-Addon Manager installation is not yet provided or verified. User-reported
-testing covers the stated scope, without claiming every installation step.
+Addon Manager installation is not yet provided or verified. Completed manual checks do not cover every installation step or constitute a full regression.
 
 ## Development
 

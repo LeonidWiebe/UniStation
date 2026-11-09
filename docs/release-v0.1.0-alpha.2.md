@@ -1,3 +1,5 @@
+**Предыдущий ZIP-релиз. Для новой установки используйте [Windows-инсталлятор alpha.3](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3).**
+
 # UniStation v0.1.0-alpha.2 — первый предварительный релиз
 
 UniStation — экспериментальный Workbench для FreeCAD с основным вводом точек
@@ -5,11 +7,10 @@ UniStation — экспериментальный Workbench для FreeCAD с о
 
 ## Совместимость и результат проверки
 
-Пользователь сообщил об успешном тестировании в **FreeCAD 1.1.1**.
-1.1.1 — минимальная версия, проверенная пользователем в сообщённом объёме.
+Проверена работа UniStation в **FreeCAD 1.1.1** — это минимальная проверенная версия.
 Прежняя опорная среда — FreeCAD 1.1.4. Метаданные допускают 1.1.1–1.1.4,
 но отдельная проверка 1.1.2/1.1.3 и любых сочетаний Python/Qt/ABI не заявляется.
-Точные ОС/Python/Qt и отдельные сценарии последней пробы не перечислены.
+Проверка не подтверждает все ОС/Python/Qt и отдельные сценарии.
 Полный бинарный пакет предназначен для **Windows x86_64 / Python 3.11**;
 работа этого бинарника в других ОС не подтверждена. FreeCAD в ZIP не включён.
 
@@ -64,22 +65,21 @@ theme_01, отличающийся от бинарника публичного 
 Подробности — Mod/AxisFlow/SOURCE-INFO.md внутри полного ZIP.
 
 Архивы собраны из commit `25fca51d6c116290ebd004eb07744e5fc3b02073` и после
-пользовательской пробы не менялись. Слова pending/candidate внутри них отражают
-момент сборки до обратной связи; сведения этого релиза дополняют тот снимок.
+проверки продукта не менялись. Слова pending/candidate внутри них отражают
+момент сборки до завершения проверки; сведения этого релиза дополняют тот снимок.
 Тег содержит последующие изменения публичной документации, без изменений
 45 runtime-файлов UniStation и бинарника AxisFlow. Для точного воспроизведения
 исходного ZIP используйте указанный build commit, а не обновлённую документацию.
-Codex не запускал FreeCAD/GUI/автотесты, не имитировал ввод и не собирал AxisFlow.
+При подготовке пакета FreeCAD/GUI/автотесты и имитация ввода не запускались; AxisFlow не пересобирался.
 
 ## English
 
-First experimental prerelease. The user reported successful UniStation testing
-with **FreeCAD 1.1.1**, accepted in the reported scope; exact Python/Qt versions
-and individual scenarios were not supplied. 1.1.4 remains the earlier reference.
+First experimental prerelease. Tested with **FreeCAD 1.1.1**.
+This is not a complete regression or certification of every Python/Qt combination. 1.1.4 remains the earlier reference.
 The declared 1.1.1–1.1.4 range is not certification of every build/version.
 Download the full Windows x64/Python 3.11 ZIP for UniStation plus the accepted
 AxisFlow theme_01, corresponding source archive, LGPL notice and separate-profile
 launcher. FreeCAD is external. The workbench-only ZIP needs AxisFlow separately.
 Artifacts are unchanged from build commit 25fca51; their pre-check pending text
-is superseded by this scoped user result. GPL-3.0-only / LGPL-2.1-or-later.
+is supplemented by the completed product check. GPL-3.0-only / LGPL-2.1-or-later.
 Disabled placeholders and known limitations remain; this is not a stable release.

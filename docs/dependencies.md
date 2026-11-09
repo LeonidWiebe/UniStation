@@ -1,79 +1,47 @@
 # Dependencies and compatibility / Зависимости
 
-**User result, 2026-11-09:** successful testing in FreeCAD 1.1.1 was reported
-and accepted in that scope. Exact runtime library versions were not supplied;
-no general ABI guarantee follows. [Prerelease](release-v0.1.0-alpha.2.md).
-The earlier preparation status below is retained as build context.
-
-**Alpha.2:** experimental minimum for a new user check is FreeCAD **1.1.1**;
-the declared maximum remains 1.1.4. This does not certify the range or the
-official 1.1.1 binary ABI. Read the [static compatibility review](compatibility-1.1.1.md).
-The table below records the previously used 1.1.4 reference environment.
-
-## Recorded local environment
+UniStation has been tested with **FreeCAD 1.1.1**. The earlier reference runtime
+is 1.1.4. The manifest declares 1.1.1–1.1.4 and Python 3.11; this is not a full
+test of every intermediate version, library combination or lifecycle scenario.
+The new Windows installer's runtime check remains pending.
 
 | Component | Recorded state |
 | --- | --- |
-| Operating system | Windows; other systems not validated here |
-| FreeCAD | 1.1.4, source reference `4fd3bf320d9566a27e60069fc8387448aaa3a094` |
-| Python / Qt in the recorded portable runtime | 3.11.14 / 6.8.3 |
-| AxisFlow API source reference | `5dda554759d813559d94416286014f0cb6fc780e` |
-| Active local AxisFlow binary SHA-256 | `222678c61f86bb576160c8c939e394470abb2242449fc9d924ea44e9f580426e` |
-| AxisFlow build environment / intended runtime | FreeCAD 1.1.1 / FreeCAD 1.1.4 |
-| Corresponding source snapshot by accepted build manifests | `7daa0ffd776eac559ed7468bec43911ec159adbb` (no independent rebuild) |
+| Installer / binary payload | Windows x64, FreeCAD 1.1 with compatible Python 3.11 libraries |
+| FreeCAD 1.1.1 source | 0108fd4b4850cc46e625b60e53cea7a7bbe69f8d |
+| FreeCAD 1.1.4 source | 4fd3bf320d9566a27e60069fc8387448aaa3a094 |
+| Earlier portable 1.1.4 | Python 3.11.14 / Qt 6.8.3 |
+| AxisFlow theme_01 SHA-256 | 222678c61f86bb576160c8c939e394470abb2242449fc9d924ea44e9f580426e |
+| AxisFlow build SDK | FreeCAD 1.1.1, Python 3.11.14, MSVC 19.44 |
+| Equivalent source snapshot by build manifests | 7daa0ffd776eac559ed7468bec43911ec159adbb |
 
-The API reference and binary hash identify different kinds of evidence. The
-reference commit does not prove which sources produced the binary. The local
-binary's appearance and normal operation were accepted by the user in the
-reported scope; that is not a general ABI guarantee or a test of a binary
-downloaded elsewhere. No AxisFlow binary is tracked in this repository.
-A separate local candidate includes the accepted binary, complete source
-snapshot and build information; see [distribution](distribution.md).
+Exact library versions from the earlier 1.1.4 environment must not be assumed
+for every 1.1.1 installation. The binary source association matches all 29 C++
+files, CMake and QRC; 56/57 baseline entries match, except a non-build archive
+helper. It is reconstructed source equivalence, not an independent rebuild or
+bit-reproducibility proof. The public AxisFlow v0.2.1 release has a different pyd.
 
-The packaging audit matched all 29 C++ source/header files, CMake and the QRC
-to accepted build evidence. 56 of 57 baseline records matched; the exception
-is a non-build archive helper. The public snapshot postdates the build and
-establishes source-content equivalence, not a new reproducibility check.
-The public v0.2.1 release binary has a different hash. The separate working
-AxisFlow checkout has older panel sources; it was not used or edited.
+The installer optionally supplies theme_01 with LGPL text, SOURCE-INFO and the
+complete source ZIP. The Git repository itself contains no AxisFlow binary.
+FreeCAD, Python, Qt/PySide, Coin/pivy and OCC come from the separate FreeCAD
+installation. Matching Python package names do not establish compatibility.
 
-## Public APIs used
+## APIs
 
-Point-based commands use AxisFlow `getPoint`, `endSession`, `setPlane` and
-`isActive`. Explicit coordinate input also uses `confirm` and `setBasePoint`;
-Circle/Arc read the live frame through `getCompassInfo`. Snapping uses
-`getSettings` and `setSetting`, sharing Draft's existing Snapper modes.
-UniStation checks required input capabilities before taking ownership.
+Point commands use AxisFlow getPoint/endSession/setPlane/isActive. Explicit
+coordinates use confirm/setBasePoint; Circle/Arc read getCompassInfo during the
+command. Snapping uses getSettings/setSetting and native Draft Snapper modes.
+Required input capabilities are checked before ownership. Geometry factories,
+transactions, views and selection are provided by FreeCAD/Draft/Part.
 
-FreeCAD provides Draft geometry factories, Part/OCC geometry, document
-transactions and selection. PySide and pivy/Coin come from the FreeCAD
-environment. Installing unrelated Python packages with matching names does
-not establish compatibility with that environment.
-
-## Source preparation versus binary delivery
-
-UniStation's Python files do not require compilation. English/Russian `.qm`
-catalogs are included with their `.ts` sources. `tools/update-translations.py`
-can regenerate catalogs when intentionally invoked with compatible Qt tools;
-it is not run during this publication work.
-
-The candidate includes corresponding source/build information and component
-notices. A clean installation check by the user remains pending; no binary
-was rebuilt. See [distribution](distribution.md) and
-[licensing notices](../THIRD_PARTY_NOTICES.md).
+UniStation Python needs no compilation. TS/QM sources/catalogs are included;
+they were not regenerated for the installer or this documentation refresh.
+See [installation](installation.md), [distribution](distribution.md) and
+[notices](../THIRD_PARTY_NOTICES.md).
 
 ## По-русски
 
-Зафиксированная локальная среда — Windows, FreeCAD 1.1.4, Python 3.11.14 и
-Qt 6.8.3. Активный AxisFlow собран в среде FreeCAD 1.1.1 и использовался
-пользователем с 1.1.4. Его SHA-256 приведён выше; точный соответствующий commit
-исходников восстановлен по манифестам принятой сборки как эквивалентный по
-содержанию снимок `7daa0ffd776eac559ed7468bec43911ec159adbb`. Независимая
-пересборка не выполнялась. Commit анализа API сам по себе не подтверждает
-происхождение бинарника. Приёмку локальной сборки нельзя переносить на другой файл.
-
-Для запуска нужен отдельный совместимый AxisFlow с указанными публичными
-методами. Бинарник не включён. Python-код UniStation сборки не требует;
-переводы TS/QM включены. Подготовка воспроизводимого бинарного комплекта —
-отдельный этап. Локальный кандидат подготовлен и ожидает пользовательской
-пробы; порядок установки — в [инструкции](../packaging/INSTALL.md).
+Работа проверена в 1.1.1; 1.1.4 — прежняя опорная среда. Инсталлятор содержит
+выбираемый AxisFlow с исходниками, но FreeCAD ставится отдельно. Происхождение
+theme_01 восстановлено по принятым манифестам; независимая пересборка не выполнена.
+Продуктовая проверка не заменяет проверку нового мастера установки/удаления.

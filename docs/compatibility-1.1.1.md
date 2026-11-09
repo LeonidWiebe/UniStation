@@ -1,60 +1,42 @@
-# FreeCAD 1.1.1 — experimental test minimum
+# FreeCAD 1.1.1 compatibility
 
-**Subsequent user result, 2026-11-09:** the user reported successful testing in
-FreeCAD **1.1.1**. This is the user-tested minimum in the reported scope; no
-repeat is required. Exact Python/Qt/OS, archive identity and individual steps
-were not supplied, so no blanket ABI certification or full regression is
-implied. The static review below records the pre-check state.
-See [prerelease notes](release-v0.1.0-alpha.2.md) for the current distribution.
+**Tested with FreeCAD 1.1.1.** It is the checked minimum; 1.1.4 remains the earlier
+reference. This covers the completed product check, without claiming a complete
+regression, every ABI combination, or the new installer's setup/uninstall flow.
+Version 1.1.2/1.1.3 were not separately checked in this minimum-version review.
 
-**Conclusion, 2026-11-09:** FreeCAD 1.1.1 can be admitted as an experimental
-minimum for a user installation check. This is a static compatibility finding,
-not acceptance of the official Windows binary runtime.
+## Static evidence
 
-## Evidence
+Tag 1.1.1: `0108fd4b4850cc46e625b60e53cea7a7bbe69f8d`.
+Reference 1.1.4: `4fd3bf320d9566a27e60069fc8387448aaa3a094`.
 
-- Official tag 1.1.1 is commit
-  `0108fd4b4850cc46e625b60e53cea7a7bbe69f8d`; reference 1.1.4 is
-  `4fd3bf320d9566a27e60069fc8387448aaa3a094`.
-- 23 reviewed implementation files are byte-identical between those commits:
-  package metadata/GUI loader, command resources and actions, selection and view
-  Python APIs, GUI document observer, Draft entry points, working plane,
-  line/wire/circle factories, Move, snapping, Wire/Circle objects and Part Arc.
-- Custom user-path handling and the launcher's user/system config and log
-  command-line options are unchanged. The module loader differs only by added
-  macro-directory bookkeeping, which this launcher does not use.
-- All 29 UniStation Python files parse under Python 3.11 syntax. Product files
-  are unchanged. The accepted AxisFlow theme_01 binary was built against
-  FreeCAD **1.1.1** source/SDK with Python 3.11.14, MSVC 19.44.
+23 reviewed implementation files are identical: metadata/GUI loading,
+commands/actions, selection/view APIs, GUI observer, Draft entry points,
+working plane, Line/Wire/Circle factories, Move, snapping, Wire/Circle objects
+and Part Arc. Custom user-path handling and the old launcher's config/log
+options match; the module-loader difference is macro-directory bookkeeping.
+All 29 product Python files parse under Python 3.11 syntax.
 
-The SDK provenance alone does not prove compatibility with every official or
-third-party 1.1.1 binary. No official 1.1.1 runtime was downloaded or launched in
-this review. Exact bundled Python/Qt/Coin/fmt versions and .pyd loading remain
-to be checked in the user session. API review does not prove all transitive
-behavior is equivalent: later Draft color/view-provider and core/Part fixes
-exist in 1.1.4. Earlier limitations and scoped acceptances remain in force.
+The included AxisFlow binary was built on SDK 1.1.1, Python 3.11.14, MSVC 19.44.
+That provenance alone does not certify every official or third-party runtime.
+Later Draft color/view-provider and core/Part fixes exist in 1.1.4; API checks
+do not establish complete transitive behavior equivalence.
 
-## Candidate and user check
+## Current delivery
 
-Alpha.2 declares `freecadmin=1.1.1`, `freecadmax=1.1.4`, Python 3.11 minimum.
-The range permits testing; 1.1.2/1.1.3 were not separately audited or tested.
-1.1.4 remains the previously used reference environment, with its recorded
-user acceptances. New clean-profile installation checks are pending.
-
-Use the official Windows x64 py311 archive from the
-[1.1.1 release](https://github.com/FreeCAD/FreeCAD/releases/tag/1.1.1), follow
-[INSTALL](../packaging/INSTALL.md), then report [USER-CHECK](../packaging/USER-CHECK.md)
-with the actual Python/Qt versions. Extract separate candidate folders for
-1.1.1 and 1.1.4; do not share their profiles. No AxisFlow rebuild is needed to
-attempt this check. A load failure would require diagnosis, not an assumed fix.
+The manifest declares freecadmin 1.1.1, freecadmax 1.1.4 and Python minimum 3.11.
+Use the [alpha.3 Windows installer](release-v0.1.0-alpha.3.md) with the correct
+FreeCAD/profile, choosing the parent Mod directory. The earlier alpha.2
+separate-profile package remains a build/history artifact. The installer itself
+still needs runtime validation; see its [check](../packaging/installer/USER-CHECK.md).
 
 ## По-русски
 
-1.1.1 допущена как **экспериментальный минимум для тестирования**. Статических
-препятствий в проверенных API не найдено. Совместимость официального runtime
-и успешная установка ещё не подтверждены пользователем. В alpha.2 изменены
-метаданные и документы; геометрия, ввод, переводы и бинарник AxisFlow прежние.
+Работа UniStation в FreeCAD 1.1.1 проверена. Полная регрессия и весь диапазон
+версий/ABI не подтверждены. Установка, удаление и аварийное восстановление
+через новый мастер alpha.3 ещё не проверены выполнением. Код продукта и
+бинарник AxisFlow при смене способа поставки сохранены.
 
-Primary sources: [1.1.1 GUI loader](https://github.com/FreeCAD/FreeCAD/blob/0108fd4b4850cc46e625b60e53cea7a7bbe69f8d/src/Gui/FreeCADGuiInit.py),
+Primary references: [GUI loader](https://github.com/FreeCAD/FreeCAD/blob/0108fd4b4850cc46e625b60e53cea7a7bbe69f8d/src/Gui/FreeCADGuiInit.py),
 [Draft factories](https://github.com/FreeCAD/FreeCAD/tree/0108fd4b4850cc46e625b60e53cea7a7bbe69f8d/src/Mod/Draft/draftmake),
 [working plane](https://github.com/FreeCAD/FreeCAD/blob/0108fd4b4850cc46e625b60e53cea7a7bbe69f8d/src/Mod/Draft/WorkingPlane.py).
