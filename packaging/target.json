@@ -1,16 +1,30 @@
 {
   "schema_version": 1,
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "status": "installation-candidate-user-validation-pending",
   "product_baseline_commit": "0025de737dcf86152d2e8661ea164217ed2eb955",
   "platform": "Windows x86_64",
   "freecad": {
+    "minimum_test_version": "1.1.1",
+    "maximum_declared_version": "1.1.4",
+    "version_role": "previously used reference runtime, not the minimum",
     "version": "1.1.4",
     "source_commit": "4fd3bf320d9566a27e60069fc8387448aaa3a094",
     "python": "3.11.14",
     "qt": "6.8.3",
     "download": "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Windows-x86_64-py311.7z",
-    "archive_sha256": "4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d"
+    "archive_sha256": "4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d",
+    "experimental_minimum": {
+      "version": "1.1.1",
+      "source_commit": "0108fd4b4850cc46e625b60e53cea7a7bbe69f8d",
+      "download": "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.1/FreeCAD_1.1.1-Windows-x86_64-py311.7z",
+      "archive_sha256": "aef51acb6725d5667bbae73494d04794a1e1725e17c6589650b044c15808144f",
+      "archive_sha256_source": "official release assets; archive not downloaded by this audit",
+      "status": "static API review passed; official binary ABI and user installation pending",
+      "python_family": "3.11",
+      "exact_bundled_library_versions_verified": false
+    },
+    "all_versions_in_declared_range_tested": false
   },
   "axisflow": {
     "version": "0.2.1",

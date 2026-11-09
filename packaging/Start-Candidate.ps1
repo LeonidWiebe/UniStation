@@ -36,7 +36,7 @@ if (Test-Path -LiteralPath $profilePath) {
 }
 New-Item -ItemType Directory -Path $profilePath -Force | Out-Null
 if (-not (Test-Path -LiteralPath $markerPath)) {
-    @{kind='UniStation installation candidate'; version='0.1.0-alpha.1'} |
+    @{kind='UniStation installation candidate'; version='0.1.0-alpha.2'} |
         ConvertTo-Json | Set-Content -LiteralPath $markerPath -Encoding UTF8
 }
 $logDirectory = Join-Path $profilePath 'logs'

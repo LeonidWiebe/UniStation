@@ -2,8 +2,9 @@
 
 [English overview](../README.md) · [Русское описание](../README.ru.md)
 
-**Packaging branch update, 2026-11-09:** a local Windows/FreeCAD 1.1.4
-installation candidate is ready for a user check. For that candidate use
+**Packaging branch update, 2026-11-09:** alpha.2 admits Windows/FreeCAD 1.1.1
+as the experimental test minimum, with 1.1.4 as reference. See
+[compatibility](compatibility-1.1.1.md). For that candidate use
 [INSTALL](../packaging/INSTALL.md) and [USER-CHECK](../packaging/USER-CHECK.md).
 The conventional source-only procedure below remains available; it supplies
 no AxisFlow binary. Addon Manager installation has not been verified.

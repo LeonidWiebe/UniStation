@@ -3,6 +3,16 @@
 This log describes the prototype's source state; these dates are not release
 tags or evidence of a new installation test.
 
+## 0.1.0-alpha.2 minimum-version candidate — 2026-11-09
+
+- Admitted FreeCAD 1.1.1 as an experimental test minimum; maximum remains 1.1.4.
+- Compared pinned source tags: 23 reviewed API implementation files identical;
+  checked custom profile/launcher support and Python 3.11 syntax.
+- Added official 1.1.1 download identity and a separate-profile user check.
+- Product runtime and AxisFlow unchanged; official 1.1.1 binary ABI/load and
+  installation remain unverified. No GUI or automated behavioral runs.
+- Alpha.1 archives retained unchanged; no GitHub Release published.
+
 ## 0.1.0-alpha.1 installation candidate — 2026-11-09
 
 - Added workbench metadata, explicit target ABI and deterministic ZIP builder.

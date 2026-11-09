@@ -1,5 +1,10 @@
 # Dependencies and compatibility / Зависимости
 
+**Alpha.2:** experimental minimum for a new user check is FreeCAD **1.1.1**;
+the declared maximum remains 1.1.4. This does not certify the range or the
+official 1.1.1 binary ABI. Read the [static compatibility review](compatibility-1.1.1.md).
+The table below records the previously used 1.1.4 reference environment.
+
 ## Recorded local environment
 
 | Component | Recorded state |

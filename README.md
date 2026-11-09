@@ -14,6 +14,9 @@ see [distribution status](docs/distribution.md), [instructions](packaging/INSTAL
 and the [user installation check](packaging/USER-CHECK.md). No GitHub Release
 or clean-install acceptance is implied.
 
+Alpha.2 admits FreeCAD **1.1.1 as an experimental test minimum**; 1.1.4 remains
+the reference runtime. [Static review and remaining user check](docs/compatibility-1.1.1.md).
+
 ## Available features
 
 - Line, open/closed polyline, circle from center and radius point, three-point arc.

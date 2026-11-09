@@ -1,4 +1,4 @@
-# UniStation 0.1.0-alpha.1 — установка кандидата
+# UniStation 0.1.0-alpha.2 — установка кандидата
 
 Это кандидат установочного пакета для пользовательской проверки, не
 подтверждённый стабильный релиз. Функционал соответствует первому
@@ -6,23 +6,35 @@
 
 ## Целевая среда
 
-Windows x86_64, официальный portable FreeCAD **1.1.4 / Python 3.11.14 /
-Qt 6.8.3**. [Скачать FreeCAD](https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Windows-x86_64-py311.7z).
+Минимум для новой пользовательской пробы — **FreeCAD 1.1.1, Windows x86_64,
+официальная portable-сборка py311**.
+[Скачать 1.1.1](https://github.com/FreeCAD/FreeCAD/releases/download/1.1.1/FreeCAD_1.1.1-Windows-x86_64-py311.7z).
+SHA-256 из официального списка файлов релиза:
+`aef51acb6725d5667bbae73494d04794a1e1725e17c6589650b044c15808144f`.
+В этом аудите сам архив FreeCAD 1.1.1 не скачивался. Совместимость API проверена
+статически; загрузка бинарного AxisFlow в этой официальной сборке ещё не проверена.
+
+Прежняя опорная среда — **1.1.4 / Python 3.11.14 / Qt 6.8.3**.
+[Скачать 1.1.4](https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Windows-x86_64-py311.7z).
 SHA-256 архива:
 `4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d`.
 FreeCAD в пакет не включён. Номер 1.1.4 без совпадающей ABI не гарантирует
-работу приложенного AxisFlow. Другие сборки и ОС этим кандидатом не проверены.
+работу приложенного AxisFlow. То же относится к номеру 1.1.1: важна ABI.
+Диапазон метаданных 1.1.1–1.1.4 разрешает тестирование, а не подтверждает все
+промежуточные версии. Другие сборки и ОС этим кандидатом не проверены.
 
 ## Вариант A: полный кандидат для отдельного профиля
 
-1. Распакуйте `UniStation-0.1.0-alpha.1-Windows-FC1.1.4-candidate.zip`
+1. Распакуйте `UniStation-0.1.0-alpha.2-Windows-FC1.1-candidate.zip`
    в отдельную папку, например `C:\UniStation-Candidate`. Не размещайте поверх
-   рабочего FreeCAD или существующей версии дополнений.
+   рабочего FreeCAD или существующей версии дополнений. Для сравнения версий
+   распакуйте пакет в две разные папки: одна для 1.1.1, другая для 1.1.4.
+   Профили и данные этих проб не смешивайте.
 2. Закройте все экземпляры FreeCAD сами. Launcher не закрывает чужие процессы.
 3. Откройте PowerShell в распакованной папке и выполните, указав ваш FreeCAD:
 
    ```powershell
-   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Start-Candidate.ps1 -FreeCADExe "C:\FreeCAD-1.1.4\bin\FreeCAD.exe"
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Start-Candidate.ps1 -FreeCADExe "C:\FreeCAD-1.1.1\bin\FreeCAD.exe"
    ```
 
 4. Скрипт создаёт только отдельный профиль `candidate-profile` рядом с собой,
@@ -42,7 +54,7 @@ FreeCAD 1.1.1; пользовательская работа ранее подт
 
 ## Вариант B: только Workbench
 
-Архив `UniStation-0.1.0-alpha.1-workbench.zip` содержит верхнюю папку
+Архив `UniStation-0.1.0-alpha.2-workbench.zip` содержит верхнюю папку
 `UniStation` с **InitGui.py непосредственно внутри неё**. При закрытом FreeCAD
 скопируйте её в `Mod` нужного профиля. Путь профиля заранее можно прочитать
 через `App.getUserAppDataDir()` в Python-консоли FreeCAD.
@@ -76,8 +88,11 @@ UniStation — GPL-3.0-only; AxisFlow — LGPL-2.1-or-later. Библиотеч�
 
 ## English
 
-This is an installation candidate for Windows x64 and the recorded FreeCAD
-1.1.4 / Python 3.11 / Qt 6.8.3 runtime, pending a user check. Extract the full
+This is an installation candidate for Windows x64 with FreeCAD 1.1.1 as an
+experimental test minimum and 1.1.4 as the recorded reference runtime. Static
+API review passed; the official 1.1.1 binary ABI and installation remain untested.
+The declared 1.1.1–1.1.4 range is not a claim that every version was tested.
+Extract the full
 candidate into a separate directory, close FreeCAD, then run Start-Candidate.ps1
 with `-FreeCADExe` pointing at the matching FreeCAD executable. It uses a
 separate marked profile and never replaces an existing addon installation.

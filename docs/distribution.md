@@ -1,12 +1,12 @@
-# Installation candidate 0.1.0-alpha.1 / Кандидат установки
+# Installation candidate 0.1.0-alpha.2 / Кандидат установки
 
 This branch prepares packages; it has not been published as a GitHub Release.
 Product Python, SVG and TS/QM files remain byte-identical to the initial source
 publication, commit `0025de737dcf86152d2e8661ea164217ed2eb955`.
 
-- `UniStation-0.1.0-alpha.1-workbench.zip`: UniStation alone, with InitGui.py
+- `UniStation-0.1.0-alpha.2-workbench.zip`: UniStation alone, with InitGui.py
   directly inside UniStation/. AxisFlow is needed separately.
-- `UniStation-0.1.0-alpha.1-Windows-FC1.1.4-candidate.zip`: local installation
+- `UniStation-0.1.0-alpha.2-Windows-FC1.1-candidate.zip`: local installation
   candidate with accepted AxisFlow theme_01, its complete source archive and
   LGPL notice, and a separate-profile launcher. FreeCAD is external.
 - `AxisFlow-source-7daa0ffd776eac559ed7468bec43911ec159adbb.zip`: all 100 tracked
@@ -21,7 +21,9 @@ not existing download links or a claim of installation acceptance.
 ## Metadata and build tool
 
 Repository-root package.xml declares UniStation's inner workbench directory,
-GPL-3.0-only, FreeCAD 1.1.4 and AxisFlow. A version dependency alone cannot
+GPL-3.0-only, experimental minimum FreeCAD 1.1.1, declared maximum 1.1.4,
+and AxisFlow. [Minimum-version review](compatibility-1.1.1.md).
+A version dependency alone cannot
 verify a C++ addon ABI. Addon Manager listing/installation has not been tested.
 
 ```text
@@ -43,9 +45,13 @@ No automatic GUI/input checks were performed.
 
 Это подготовка кандидата, а не опубликованный GitHub Release. Полный ZIP
 предназначен для новой пользовательской пробы установки на Windows x64 с
-зафиксированным FreeCAD 1.1.4. Конфигурация отдельная, личные настройки не
+минимальной тестовой версией FreeCAD 1.1.1 и опорной средой 1.1.4.
+Метаданные разрешают диапазон 1.1.1–1.1.4 для пробы, но совместимость каждой
+версии не подтверждена. Конфигурация отдельная, личные настройки не
 копируются. FreeCAD скачивается отдельно. Рабочий бинарник AxisFlow theme_01
 отличается от публичного релиза v0.2.1; приложены соответствующий исходный
 снимок, LGPL и сведения о сборке. Побитовая воспроизводимость бинарника новой
 сборкой не проверялась. После пользовательской пробы можно готовить GitHub
 Release с проверенными архивами и контрольными суммами.
+
+Alpha.1 archives remain unchanged as the previous 1.1.4-only candidate.
