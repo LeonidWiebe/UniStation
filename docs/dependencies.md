@@ -2,7 +2,7 @@
 
 Earlier UniStation functionality was tested with **FreeCAD 1.1.1**. Recent alpha.4 feature checks used 1.1.4; a complete alpha.4 run in 1.1.1 has not been performed. The manifest declares 1.1.1–1.1.4 and Python 3.11; this is not a full
 test of every intermediate version, library combination or lifecycle scenario.
-The new Windows installer's runtime check remains pending.
+Manual installation/launch in FreeCAD 1.1.3 and the alpha.6 uninstall retest passed in the reported scope; full regression and forced recovery are not certified.
 
 | Component | Recorded state |
 | --- | --- |

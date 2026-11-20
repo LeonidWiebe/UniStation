@@ -21,9 +21,12 @@ in tests/current_scope.json, without FreeCAD or GUI. Its actual result is
 recorded in the release notes after completion; no broad discover or deferred
 key-in cases are added. Repeated/full runs require separate approval.
 
-The setup executable is compiled and inspected as an archive/PE; installer and
-uninstaller are not executed by that inspection. A clean-profile manual check
-of setup, component selection, upgrade, uninstall and restore is still needed:
+The alpha.6 setup and launcher compile without warnings; 123 extracted payload
+files match the manifest. Manual installation/FreeCAD launch passed in 1.1.3;
+the retest after the alpha.6 uninstall fix succeeded in the reported scope.
+This does not certify complete regression, every detection/component branch or
+forced failure recovery. No new automated run was made for publication.
+Additional manual scenarios remain documented separately:
 [installer check](../packaging/installer/USER-CHECK.md).
 
 ## Alpha.4 unit run — 20 November 2026

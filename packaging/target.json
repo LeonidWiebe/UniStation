@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "version": "0.1.0-alpha.4",
-  "status": "alpha.4-current-source-installer-runtime-validation-pending",
+  "version": "0.1.0-alpha.6",
+  "status": "prerelease-manual-install-launch-uninstall-smoke-passed-in-reported-scope",
   "delivery": "NSIS Windows wizard; FreeCAD installed separately",
   "default_mod_directory": "%APPDATA%\\FreeCAD\\v1-1\\Mod",
   "platform": "Windows x86_64",
@@ -42,7 +42,16 @@
     "UniStation": "GPL-3.0-only",
     "AxisFlow": "LGPL-2.1-or-later"
   },
-  "new_installation_tested": false,
+  "new_installation_tested": true,
   "binary_rebuilt": false,
-  "product_source": "current checkout UniStation/; per-file SHA-256 in build manifest"
+  "product_source": "current checkout UniStation/; per-file SHA-256 in build manifest",
+  "manual_acceptance": {
+    "date": "2026-11-20",
+    "freecad_install_launch_version": "1.1.3",
+    "result": "manual install/launch passed; alpha.6 uninstall retest succeeded in reported scope",
+    "detailed_step_list_available": false,
+    "full_regression_claimed": false,
+    "forced_failure_recovery_verified": false,
+    "new_automated_run": false
+  }
 }

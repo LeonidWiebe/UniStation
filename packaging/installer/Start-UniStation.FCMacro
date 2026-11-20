@@ -1,0 +1,46 @@
+"""User-invoked startup from the installed shortcut; no document or drawing command."""
+
+
+def _start_installed_unistation():
+    import os
+    import struct
+    import sys
+    from pathlib import Path
+
+    import FreeCAD as App
+    import FreeCADGui as Gui
+
+    version = tuple(int(part) for part in App.Version()[:3])
+    minimum = tuple(map(int, "@FREECAD_MIN@".split(".")))
+    maximum = tuple(map(int, "@FREECAD_MAX@".split(".")))
+    if not minimum <= version <= maximum:
+        raise RuntimeError("FreeCAD @FREECAD_MIN@–@FREECAD_MAX@ is required / Требуется FreeCAD @FREECAD_MIN@–@FREECAD_MAX@")
+    if sys.version_info[:2] != (3, 11) or struct.calcsize("P") != 8:
+        raise RuntimeError("Windows x64 / Python 3.11 is required / Требуется Windows x64 / Python 3.11")
+    root = Path(os.environ["USTN_INSTALLER_MOD_ROOT"]).resolve()
+    if (Path(App.getUserAppDataDir()) / "Mod").resolve() != root:
+        raise RuntimeError("The FreeCAD profile differs from the installed profile / Выбран другой профиль FreeCAD")
+    if "UniStationWorkbench" not in Gui.listWorkbenches():
+        raise RuntimeError("UniStation failed to load. See Report view / UniStation не загружен. Откройте панель отчёта")
+    import unistation
+    import AxisFlow
+    if Path(unistation.__file__).resolve().parent != root / "UniStation" / "unistation":
+        raise RuntimeError("A different UniStation module was loaded / Загружен другой модуль UniStation")
+    if Path(AxisFlow.__file__).resolve().parent != root / "AxisFlow":
+        raise RuntimeError("A different AxisFlow module was loaded / Загружен другой модуль AxisFlow")
+    Gui.activateWorkbench("DraftWorkbench")
+    if not Gui.activateWorkbench("UniStationWorkbench"):
+        raise RuntimeError("UniStation activation failed / Не удалось активировать UniStation")
+    App.Console.PrintMessage("UniStation: create or open a document / Создайте или откройте документ.\n")
+
+
+try:
+    _start_installed_unistation()
+except Exception as _ustn_error:
+    import FreeCAD as _ustn_app
+    import FreeCADGui as _ustn_gui
+    from PySide import QtWidgets as _ustn_widgets
+
+    _ustn_message = str(_ustn_error)
+    _ustn_app.Console.PrintError("UniStation: " + _ustn_message + "\n")
+    _ustn_widgets.QMessageBox.critical(_ustn_gui.getMainWindow(), "UniStation", _ustn_message)

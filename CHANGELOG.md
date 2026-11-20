@@ -1,5 +1,16 @@
 # Changes
 
+## v0.1.0-alpha.6 — 2026-11-20
+
+- Detect and validate FreeCAD, allow manual executable selection, and show the
+  current Windows account. Supported package range: 1.1.1–1.1.4, x64 / Python 3.11.
+- Desktop/Start menu shortcuts start the configured FreeCAD with UniStation active.
+- Fix the uninstaller's original-directory lookup; preserve ownership checks.
+- Manual installation/launch and the uninstall retest passed in the reported
+  scope. No new automated run, full regression or forced rollback acceptance.
+- Product runtime and all AxisFlow files unchanged from alpha.4. Alpha.5 was a
+  local candidate; old public release assets/tags are retained.
+
 ## v0.1.0-alpha.4 — 2026-11-20
 
 - Packaged current UniStation sources: FCStd layers, ByLayer, modeless manager,

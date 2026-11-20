@@ -72,6 +72,19 @@ def main():
     metadata = ET.parse(ROOT / 'package.xml').getroot()
     if metadata.findtext(f'{{{NS}}}version') != config['version']:
         raise ValueError('Metadata/config version mismatch')
+    for key, element in [('freecad_min', 'freecadmin'), ('freecad_max', 'freecadmax')]:
+        if config[key] != metadata.findtext(f'{{{NS}}}{element}'):
+            raise ValueError('Metadata/config FreeCAD range mismatch: ' + key)
+    if config['python_version'] != '3.11':
+        raise ValueError('The pinned AxisFlow payload requires Python 3.11')
+    # FreeCAD compares major.minor.patch + "." + BuildRevision. A plain
+    # freecadmax=1.1.4 would exclude 1.1.4.<revision>. Use the next patch as
+    # the exclusive metadata boundary; setup and startup enforce the exact max.
+    max_parts = [int(part) for part in config['freecad_max'].split('.')]
+    if len(max_parts) != 3:
+        raise ValueError('Expected a three-component FreeCAD maximum')
+    metadata_max_exclusive = '.'.join(map(str, [*max_parts[:2], max_parts[2] + 1]))
+    metadata.find(f'{{{NS}}}freecadmax').text = metadata_max_exclusive
     metadata.find(f'{{{NS}}}content/{{{NS}}}workbench/{{{NS}}}subdirectory').text = './'
     runtime['package.xml'] = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(metadata, encoding='utf-8') + b'\n'
     runtime['PACKAGE-MANIFEST.json'] = (json.dumps({
@@ -94,9 +107,29 @@ def main():
         docs[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     for path in [ROOT / 'packaging/installer/UniStation.nsi', ROOT / 'tools/build-installer.py']:
         ast.parse(path.read_text(encoding='utf-8-sig')) if path.suffix == '.py' else None
+    output = args.output_dir.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    launcher = output / 'Launch-UniStation.exe'
+    if launcher.exists():
+        raise ValueError('Refusing to overwrite an existing launcher: ' + str(launcher))
+    launcher_result = subprocess.run([
+        str(compiler), '/V3', '/NOCD', '/INPUTCHARSET', 'UTF8',
+        '/DFILEVERSION=' + config['file_version'], '/DOUTFILE=' + str(launcher),
+        str(ROOT / 'packaging/installer/Launch-UniStation.nsi'),
+    ], capture_output=True, text=True, encoding='utf-8', errors='replace')
+    (output / 'launcher-compile.log').write_text(
+        launcher_result.stdout + launcher_result.stderr, encoding='utf-8')
+    if launcher_result.returncode:
+        raise RuntimeError('Launcher compiler failed; see launcher-compile.log')
+    macro = (ROOT / 'packaging/installer/Start-UniStation.FCMacro').read_text(encoding='utf-8')
+    macro = macro.replace('@FREECAD_MIN@', config['freecad_min']).replace(
+        '@FREECAD_MAX@', config['freecad_max'])
+    ast.parse(macro, feature_version=(3, 11))
     nsis_license = (compiler.parent / 'COPYING').read_bytes()
     own_sources = {name: (ROOT / name).read_bytes() for name in [
-        'packaging/installer/UniStation.nsi', 'packaging/installer/config.json',
+        'packaging/installer/UniStation.nsi', 'packaging/installer/FreeCAD.nsh',
+        'packaging/installer/Launch-UniStation.nsi', 'packaging/installer/Start-UniStation.FCMacro',
+        'packaging/installer/config.json',
         'packaging/installer/USER-GUIDE.md', 'packaging/installer/USER-CHECK.md',
         'packaging/installer/BUILD.md', 'tools/build-installer.py', 'LICENSE',
         'package.xml', 'THIRD_PARTY_NOTICES.md']}
@@ -104,6 +137,8 @@ def main():
                         if n in source_hashes})
     own_sources.update({n: (ROOT / n).read_bytes() for n in docs if n != 'INSTALL.md'})
     support = {
+        'Launch-UniStation.exe': launcher.read_bytes(),
+        'Start-UniStation.FCMacro': macro.encode('utf-8'),
         'USER-GUIDE.txt': b'\xef\xbb\xbf' + docs['INSTALL.md'],
         'USER-CHECK.txt': b'\xef\xbb\xbf' + (ROOT / 'packaging/installer/USER-CHECK.md').read_bytes(),
         'LICENSE-UniStation.txt': runtime['LICENSE'], 'LICENSE-AxisFlow.txt': axisflow['LICENSE'],
@@ -112,7 +147,6 @@ def main():
         'LICENSES.txt': b'UniStation: GPL-3.0-only\r\n\r\n' + runtime['LICENSE']
             + b'\r\n\r\nAxisFlow: LGPL-2.1-or-later\r\n\r\n' + axisflow['LICENSE'],
     }
-    output = args.output_dir.resolve()
     stage = output / 'stage'
     generated = output / 'payload.nsh'
     groups = {'UniRuntime': runtime, 'UniDocs': docs, 'AxisFlow': axisflow, 'Support': support}
@@ -146,6 +180,7 @@ def main():
         raise ValueError('Refusing to overwrite an existing installer: ' + str(exe))
     command = [str(compiler), '/V3', '/NOCD', '/INPUTCHARSET', 'UTF8',
                '/DVERSION=' + config['version'], '/DFILEVERSION=' + config['file_version'],
+               '/DFREECAD_MIN=' + config['freecad_min'], '/DFREECAD_MAX=' + config['freecad_max'],
                '/DPAYLOAD=' + str(stage), '/DTABLES=' + str(generated),
                '/DOUTFILE=' + str(exe), str(ROOT / 'packaging/installer/UniStation.nsi')]
     result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace')
@@ -159,6 +194,9 @@ def main():
                     group + '/' + n: sha(b) for group, files in groups.items() for n, b in sorted(files.items())},
                 'product_runtime_files': runtime_count, 'runtime_source_hashes': source_hashes,
                 'axisflow_runtime_unchanged': 34,
+                'freecad_min': config['freecad_min'], 'freecad_max': config['freecad_max'],
+                'metadata_freecad_max_exclusive': metadata_max_exclusive,
+                'launcher_sha256': sha(launcher.read_bytes()),
                 'installer_executed': False, 'freecad_gui_or_tests_run': False}
     (output / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     exe.with_suffix('.exe.sha256').write_text(f"{manifest['exe_sha256']}  {exe.name}\n", encoding='ascii')

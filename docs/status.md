@@ -1,6 +1,6 @@
 # Current status — 20 November 2026
 
-Alpha.4 packages the current UniStation workbench. [Release notes](release-v0.1.0-alpha.4.md).
+Alpha.6 updates the installer, FreeCAD detection and startup shortcut; product runtime remains as in alpha.4. [Release notes](release-v0.1.0-alpha.6.md).
 
 Implemented: drawing and supported whole-object Move/Copy, FCStd layers and
 modeless manager, assignment, persistent ByLayer attributes, Global Display /
@@ -24,7 +24,7 @@ acceptance, static package inspection and installer execution are separate.
 | Reset / key-in | Corrected right-click Reset has no separate complete acceptance; earlier coordinate-entry/focus scenarios remain open. AxisFlow is primary point input. |
 | Palette / Locate | Earlier Undo/failure/read-only, JSON validation and compound-click observations remain recorded; publication does not establish their resolution. |
 | TEST-003/004 | Legacy GUI assertions/doubles require separate work. Publishing them is not evidence of passing. |
-| Installation | Wizard execution, uninstall and failure recovery remain unvalidated. EXE is unsigned. Addon Manager installation is not provided. |
+| Installation | Manual installation/launch and the alpha.6 uninstall retest passed in the reported scope. Complete regression and forced failure recovery are not certified. EXE is unsigned; Addon Manager delivery is not provided. |
 
 Next work is local project configuration and search paths, then external layer
 libraries. Cells/shared cells, a references manager and saved views are planned.

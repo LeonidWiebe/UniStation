@@ -1,13 +1,16 @@
 {
   "schema_version": 1,
-  "version": "0.1.0-alpha.4",
-  "file_version": "0.1.0.4",
+  "version": "0.1.0-alpha.6",
+  "file_version": "0.1.0.6",
   "input_archive": "dist/0.1.0-alpha.2/UniStation-0.1.0-alpha.2-Windows-FC1.1-candidate.zip",
   "input_archive_sha256": "acadb97f1d35a00bcb6098262e80543ce37f3c53028ec5d9e33ae13a780ae57e",
   "axisflow_binary_sha256": "222678c61f86bb576160c8c939e394470abb2242449fc9d924ea44e9f580426e",
   "default_mod_directory": "%APPDATA%\\FreeCAD\\v1-1\\Mod",
   "scope": "current-user",
   "freecad_bundled": false,
+  "freecad_min": "1.1.1",
+  "freecad_max": "1.1.4",
+  "python_version": "3.11",
   "compiler": {
     "name": "NSIS",
     "version": "3.12",

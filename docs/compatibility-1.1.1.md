@@ -6,8 +6,9 @@ binary compatibility.
 
 Earlier UniStation functionality was successfully checked in 1.1.1. The layers,
 ByLayer, palette and PDF work added for alpha.4 was checked in 1.1.4. A complete
-alpha.4 run in 1.1.1, intermediate versions 1.1.2/1.1.3 and arbitrary library
-combinations have not been verified.
+alpha.6 regression in 1.1.1, version 1.1.2 and arbitrary library combinations
+have not been verified. Manual installation and FreeCAD launch in 1.1.3 passed;
+the alpha.6 uninstall retest succeeded in the reported scope.
 
 The earlier static minimum-version review compared official FreeCAD source
 commits 0108fd4b4850cc46e625b60e53cea7a7bbe69f8d (1.1.1) and

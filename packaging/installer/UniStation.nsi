@@ -30,6 +30,7 @@ VIAddVersionKey "LegalCopyright" "UniStation contributors; GPL-3.0-only"
 !define REGKEY "Software\UniStation\Setup"
 !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\UniStation"
 !define OWNER "UniStation.WindowsInstaller"
+!include "${__FILEDIR__}\FreeCAD.nsh"
 
 Var StateDir
 Var TxnDir
@@ -63,6 +64,7 @@ Var SummaryText
 !define MUI_WELCOMEPAGE_TEXT "$(Welcome)"
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "${PAYLOAD}\Support\LICENSES.txt"
+Page custom FreeCADPage FreeCADPageLeave
 !insertmacro MUI_PAGE_COMPONENTS
 !define MUI_DIRECTORYPAGE_TEXT_TOP "$(DirectoryHelp)"
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE ValidateTarget
@@ -91,26 +93,28 @@ LangString AFName ${LANG_RUSSIAN} "AxisFlow — ввод координат (р�
 LangString AFName ${LANG_ENGLISH} "AxisFlow — coordinate input (recommended)"
 LangString DocsName ${LANG_RUSSIAN} "Документация UniStation"
 LangString DocsName ${LANG_ENGLISH} "UniStation documentation"
-LangString LinksName ${LANG_RUSSIAN} "Ссылки и удаление в меню «Пуск»"
-LangString LinksName ${LANG_ENGLISH} "Start menu links and uninstall entry"
+LangString LinksName ${LANG_RUSSIAN} "Ярлыки UniStation и ссылки в меню «Пуск»"
+LangString LinksName ${LANG_ENGLISH} "UniStation shortcuts and Start menu links"
 LangString UniDesc ${LANG_RUSSIAN} "Верстак UniStation. Требуется выбранный здесь либо уже установленный совместимый AxisFlow."
 LangString UniDesc ${LANG_ENGLISH} "UniStation workbench. Requires the selected or an existing compatible AxisFlow."
 LangString AFDesc ${LANG_RUSSIAN} "Проверенный ранее AxisFlow theme_01 для Windows x64 / Python 3.11, вместе с LGPL и полными исходниками. Можно пропустить при наличии совместимого модуля."
 LangString AFDesc ${LANG_ENGLISH} "Previously accepted AxisFlow theme_01 for Windows x64 / Python 3.11, including LGPL and complete sources. Skip only when a compatible module already exists."
 LangString DocsDesc ${LANG_RUSSIAN} "Руководство по установке, использованию и ограничениям."
 LangString DocsDesc ${LANG_ENGLISH} "Installation, usage and limitations documentation."
-LangString LinksDesc ${LANG_RUSSIAN} "Создать ссылки на страницу проекта и удаление выбранных компонентов."
-LangString LinksDesc ${LANG_ENGLISH} "Create links to the project page and component uninstaller."
+LangString LinksDesc ${LANG_RUSSIAN} "Запуск FreeCAD с активным UniStation: меню «Пуск» и рабочий стол. Ссылки на проект и удаление."
+LangString LinksDesc ${LANG_ENGLISH} "Start FreeCAD with UniStation active from the Start menu and desktop. Project and uninstall links."
 LangString CloseFreeCAD ${LANG_RUSSIAN} "Закройте FreeCAD и FreeCADCmd, затем повторите. Мастер не завершает процессы."
 LangString CloseFreeCAD ${LANG_ENGLISH} "Close FreeCAD and FreeCADCmd, then retry. Setup never terminates processes."
 LangString ProcessError ${LANG_RUSSIAN} "Не удалось проверить запущенные процессы. Установка остановлена до изменения компонентов."
 LangString ProcessError ${LANG_ENGLISH} "Unable to inspect running processes. Setup stopped before changing components."
-LangString InvalidPath ${LANG_RUSSIAN} "Укажите полный путь к родительскому каталогу Mod. Не выбирайте корень диска, папку самого компонента или служебную папку установщика."
-LangString InvalidPath ${LANG_ENGLISH} "Choose an absolute parent Mod path, not a drive root, component directory or setup state directory."
+LangString InvalidPath ${LANG_RUSSIAN} "Укажите полный путь к каталогу с именем Mod. Не выбирайте корень диска, папку самого компонента или служебную папку установщика."
+LangString InvalidPath ${LANG_ENGLISH} "Choose an absolute directory named Mod, not a drive root, component directory or setup state directory."
 LangString OtherInstall ${LANG_RUSSIAN} "Есть установка в другом каталоге. Для переноса сначала удалите её управляемые компоненты либо выберите прежний каталог."
 LangString OtherInstall ${LANG_ENGLISH} "A managed installation exists elsewhere. Uninstall its managed components before moving, or select its existing directory."
 LangString ForeignState ${LANG_RUSSIAN} "Служебная папка уже существует, но не принадлежит этой установке. Выберите другой каталог; существующие файлы сохранены."
 LangString ForeignState ${LANG_ENGLISH} "The state directory already exists but does not belong to this installation. Choose another location; existing files were preserved."
+LangString UnForeignState ${LANG_RUSSIAN} "Не удалось подтвердить принадлежность служебной папки:$\r$\n$StateDir$\r$\n$\r$\nУдаление остановлено до изменения компонентов. Не перемещайте служебные файлы; повторите установку в прежний Mod."
+LangString UnForeignState ${LANG_ENGLISH} "Cannot verify ownership of the setup state directory:$\r$\n$StateDir$\r$\n$\r$\nUninstall stopped before changing components. Keep the setup files in place; reinstall into the existing Mod directory."
 LangString SelectComponent ${LANG_RUSSIAN} "Выберите UniStation и/или AxisFlow."
 LangString SelectComponent ${LANG_ENGLISH} "Select UniStation and/or AxisFlow."
 LangString KeepAF ${LANG_RUSSIAN} "Оставленный UniStation требует AxisFlow. Оставьте AxisFlow либо выберите удаление обоих компонентов."
@@ -121,14 +125,16 @@ LangString SummaryTitle ${LANG_RUSSIAN} "Готово к установке"
 LangString SummaryTitle ${LANG_ENGLISH} "Ready to install"
 LangString SummaryHelp ${LANG_RUSSIAN} "Проверьте каталог и выбранные компоненты."
 LangString SummaryHelp ${LANG_ENGLISH} "Review the target and selected components."
-LangString SummaryBody ${LANG_RUSSIAN} "Родительский каталог Mod:$\r$\n$INSTDIR$\r$\n$\r$\nВыбрано:$\r$\n$SummaryText$\r$\nПрежние папки выбранных компонентов сохраняются в .UniStation-Installer\transactions.$\r$\nНастройки и документы FreeCAD не изменяются. Снятый при повторной установке флажок пропускает компонент, а не удаляет его."
-LangString SummaryBody ${LANG_ENGLISH} "Parent Mod directory:$\r$\n$INSTDIR$\r$\n$\r$\nSelected:$\r$\n$SummaryText$\r$\nExisting selected folders are retained in .UniStation-Installer\transactions.$\r$\nFreeCAD settings/documents are unchanged. Unchecking a component during reinstallation skips it; it does not uninstall it."
+LangString SummaryBody ${LANG_RUSSIAN} "FreeCAD $FcVersion: $FcExe$\r$\nПользователь: $FcUser$\r$\nКаталог Mod: $INSTDIR$\r$\n$\r$\nВыбрано:$\r$\n$SummaryText$\r$\nПрежние компоненты сохраняются в .UniStation-Installer\transactions. Настройки и документы FreeCAD не изменяются. Снятый флажок пропускает компонент, а не удаляет его."
+LangString SummaryBody ${LANG_ENGLISH} "FreeCAD $FcVersion: $FcExe$\r$\nAccount: $FcUser$\r$\nMod directory: $INSTDIR$\r$\n$\r$\nSelected:$\r$\n$SummaryText$\r$\nPrevious components are retained in .UniStation-Installer\transactions. FreeCAD settings/documents are unchanged. Unchecking a component skips it; it does not uninstall it."
 LangString InstallError ${LANG_RUSSIAN} "Установка не завершена. Прежние папки восстановлены там, где это возможно. Все перемещённые версии/частичные файлы сохранены в:$\r$\n$TxnDir$\r$\nПроверьте журнал в этом каталоге перед повтором."
 LangString InstallError ${LANG_ENGLISH} "Setup did not complete. Previous folders were restored where possible. All moved versions/partial files were retained in:$\r$\n$TxnDir$\r$\nInspect its journal before retrying."
 LangString RegistryError ${LANG_RUSSIAN} "Компоненты установлены, но запись удаления Windows создать не удалось. Удаление можно запустить напрямую:$\r$\n$StateDir\Uninstall.exe"
 LangString RegistryError ${LANG_ENGLISH} "Components are installed, but the Windows uninstall entry could not be written. Run the uninstaller directly:$\r$\n$StateDir\Uninstall.exe"
-LangString Finished ${LANG_RUSSIAN} "Выбранные компоненты установлены.$\r$\n$\r$\nЗапустите FreeCAD обычным способом и выберите UniStation (либо AxisFlow). Создайте или откройте документ.$\r$\n$\r$\nУдаление доступно в списке приложений Windows."
-LangString Finished ${LANG_ENGLISH} "Selected components are installed.$\r$\n$\r$\nStart FreeCAD normally, select UniStation (or AxisFlow), and create/open a document.$\r$\n$\r$\nUninstall is available in Windows Apps."
+LangString Finished ${LANG_RUSSIAN} "Выбранные компоненты установлены для $FcUser.$\r$\n$\r$\nЕсли выбраны ярлыки и UniStation, запускайте «UniStation - FreeCAD»: верстак будет выбран автоматически. Создайте или откройте документ.$\r$\n$\r$\nИспользуйте ту же учётную запись Windows. Удаление доступно в списке приложений."
+LangString Finished ${LANG_ENGLISH} "Selected components are installed for $FcUser.$\r$\n$\r$\nIf shortcuts and UniStation were selected, start UniStation - FreeCAD to activate the workbench automatically. Create/open a document.$\r$\n$\r$\nUse the same Windows account. Uninstall is available in Windows Apps."
+LangString ShortcutError ${LANG_RUSSIAN} "Не удалось создать один из ярлыков UniStation, либо такой ярлык уже существует и не принадлежит мастеру. Компоненты установлены; существующий ярлык не заменён."
+LangString ShortcutError ${LANG_ENGLISH} "A UniStation shortcut could not be created, or an existing shortcut is not owned by setup. Components are installed; the existing shortcut was preserved."
 LangString UnHelp ${LANG_RUSSIAN} "Выберите компоненты для удаления. Если сохранена прежняя версия, она будет восстановлена. AxisFlow можно оставить для других дополнений."
 LangString UnHelp ${LANG_ENGLISH} "Select components to remove. A saved previous version will be restored. You may keep AxisFlow for other addons."
 LangString UnError ${LANG_RUSSIAN} "Не удалось безопасно обработать компонент $RemoveName. Его файлы и резервные копии сохранены. Закройте FreeCAD и проверьте:$\r$\n$StateDir"
@@ -269,11 +275,15 @@ af_not_present:
     WriteINIStr "$StateDir\state.ini" "Managed" "AxisFlow" 1
   ${EndIf}
   WriteINIStr "$StateDir\state.ini" "Install" "Version" "${VERSION}"
+  WriteINIStr "$StateDir\state.ini" "Launch" "FreeCADExe" "$FcExe"
+  WriteINIStr "$StateDir\state.ini" "Launch" "FreeCADVersion" "$FcVersion"
+  WriteINIStr "$StateDir\state.ini" "Launch" "UserProfile" "$PROFILE"
   WriteINIStr "$StateDir\state.ini" "Install" "Status" "installed"
   IfErrors install_failed
   ; Rollback is for component/filesystem errors above. Registration follows commit.
   ClearErrors
   WriteRegStr HKCU "${REGKEY}" "ModRoot" "$INSTDIR"
+  WriteRegStr HKCU "${REGKEY}" "FreeCADExe" "$FcExe"
   WriteRegStr HKCU "${UNKEY}" "DisplayName" "UniStation ${VERSION} / AxisFlow"
   WriteRegStr HKCU "${UNKEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "${UNKEY}" "Publisher" "UniStation contributors"
@@ -289,6 +299,10 @@ af_not_present:
     CreateDirectory "$SMPROGRAMS\UniStation"
     CreateShortcut "$SMPROGRAMS\UniStation\Uninstall.lnk" "$StateDir\Uninstall.exe"
     WriteINIStr "$SMPROGRAMS\UniStation\UniStation.url" "InternetShortcut" "URL" "https://github.com/LeonidWiebe/UniStation"
+    ReadINIStr $0 "$StateDir\state.ini" "Managed" "UniStation"
+    ${If} $0 == 1
+      Call CreateLaunchShortcuts
+    ${EndIf}
   ${EndIf}
   WriteINIStr "$TxnDir\journal.ini" "Transaction" "State" "committed"
   Goto install_done
@@ -411,6 +425,18 @@ FunctionEnd
 
 Function ValidateTarget
   Call EnsureClosed
+  StrCpy $FcCandidate $FcExe
+  Call ProbeFreeCAD
+  ${If} $FcProbeError != ""
+    IfSilent invalid_freecad_silent
+    MessageBox MB_ICONSTOP "$FcProbeError"
+    Abort
+invalid_freecad_silent:
+    SetErrorLevel 2
+    Abort
+  ${EndIf}
+  StrCpy $FcExe $FcCandidate
+  StrCpy $FcVersion $FcProbeVersion
   Call ReadSelection
   ${GetRoot} "$INSTDIR" $0
   ${If} $0 == ""
@@ -428,9 +454,7 @@ Function ValidateTarget
     Goto invalid_target
   ${EndIf}
   ${GetFileName} "$INSTDIR" $0
-  ${If} $0 == "UniStation"
-  ${OrIf} $0 == "AxisFlow"
-  ${OrIf} $0 == ".UniStation-Installer"
+  ${If} $0 != "Mod"
     Goto invalid_target
   ${EndIf}
   StrCpy $StateDir "$INSTDIR\.UniStation-Installer"
@@ -513,20 +537,59 @@ Function .onInit
   ${EndIf}
   !insertmacro MUI_LANGDLL_DISPLAY
   Call EnsureClosed
+  Call DetectFreeCAD
+FunctionEnd
+
+Function CreateLaunchShortcuts
+  ; An existing unrelated shortcut must never be overwritten.
+  ReadINIStr $0 "$StateDir\state.ini" "Launch" "StartMenuOwned"
+  IfFileExists "$SMPROGRAMS\UniStation\UniStation - FreeCAD.lnk" 0 create_start_shortcut
+  StrCmp $0 1 create_start_shortcut
+  MessageBox MB_ICONEXCLAMATION "$(ShortcutError)"
+  Goto desktop_shortcut
+create_start_shortcut:
+  ClearErrors
+  CreateShortcut "$SMPROGRAMS\UniStation\UniStation - FreeCAD.lnk" "$StateDir\Launch-UniStation.exe" "" "$FcExe" 0 SW_SHOWNORMAL "" "UniStation / FreeCAD"
+  IfErrors start_shortcut_failed
+  WriteINIStr "$StateDir\state.ini" "Launch" "StartMenuOwned" 1
+  Goto desktop_shortcut
+start_shortcut_failed:
+  MessageBox MB_ICONEXCLAMATION "$(ShortcutError)"
+desktop_shortcut:
+  ReadINIStr $0 "$StateDir\state.ini" "Launch" "DesktopOwned"
+  IfFileExists "$DESKTOP\UniStation - FreeCAD.lnk" 0 create_desktop_shortcut
+  StrCmp $0 1 create_desktop_shortcut
+  MessageBox MB_ICONEXCLAMATION "$(ShortcutError)"
+  Return
+create_desktop_shortcut:
+  ClearErrors
+  CreateShortcut "$DESKTOP\UniStation - FreeCAD.lnk" "$StateDir\Launch-UniStation.exe" "" "$FcExe" 0 SW_SHOWNORMAL "" "UniStation / FreeCAD"
+  IfErrors desktop_shortcut_failed
+  WriteINIStr "$StateDir\state.ini" "Launch" "DesktopOwned" 1
+  Return
+desktop_shortcut_failed:
+  MessageBox MB_ICONEXCLAMATION "$(ShortcutError)"
 FunctionEnd
 
 Function un.onInit
   SetShellVarContext current
   !insertmacro MUI_UNGETLANGUAGE
-  StrCpy $StateDir "$EXEDIR"
+  ; NSIS self-copies the uninstaller to TEMP. EXEDIR belongs to that copy;
+  ; initial INSTDIR is the original uninstaller directory passed by the stub.
+  ; Taking the parent of a dummy filename also removes a trailing backslash.
+  GetFullPathName $0 "$INSTDIR\state.ini"
+  ${GetParent} "$0" $StateDir
+  ${GetFileName} "$StateDir" $0
+  ${If} $0 != ".UniStation-Installer"
+    Goto un_invalid_state
+  ${EndIf}
   ${GetParent} "$StateDir" $INSTDIR
   GetFullPathName $INSTDIR "$INSTDIR"
   ReadINIStr $0 "$StateDir\state.ini" "Install" "Owner"
   ReadINIStr $1 "$StateDir\state.ini" "Install" "Root"
   ${If} $0 != "${OWNER}"
   ${OrIf} $1 != $INSTDIR
-    MessageBox MB_ICONSTOP "$(ForeignState)"
-    Quit
+    Goto un_invalid_state
   ${EndIf}
   System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Local\UniStationInstaller") p .r0 ?e'
   Pop $1
@@ -542,6 +605,11 @@ Function un.onInit
   Call un.EnsureClosed
   ReadINIStr $UnRunUni "$StateDir\state.ini" "Managed" "UniStation"
   ReadINIStr $UnRunAF "$StateDir\state.ini" "Managed" "AxisFlow"
+  Return
+un_invalid_state:
+  SetErrorLevel 2
+  MessageBox MB_ICONSTOP "$(UnForeignState)"
+  Quit
 FunctionEnd
 
 Function un.ComponentsPage
@@ -654,6 +722,18 @@ Section "Uninstall"
   ${EndIf}
   ReadINIStr $0 "$StateDir\state.ini" "Managed" "UniStation"
   ReadINIStr $1 "$StateDir\state.ini" "Managed" "AxisFlow"
+  ${If} $0 != 1
+    ReadINIStr $2 "$StateDir\state.ini" "Launch" "StartMenuOwned"
+    ${If} $2 == 1
+      Delete "$SMPROGRAMS\UniStation\UniStation - FreeCAD.lnk"
+      DeleteINIStr "$StateDir\state.ini" "Launch" "StartMenuOwned"
+    ${EndIf}
+    ReadINIStr $2 "$StateDir\state.ini" "Launch" "DesktopOwned"
+    ${If} $2 == 1
+      Delete "$DESKTOP\UniStation - FreeCAD.lnk"
+      DeleteINIStr "$StateDir\state.ini" "Launch" "DesktopOwned"
+    ${EndIf}
+  ${EndIf}
   ${If} $0 != 1
   ${AndIf} $1 != 1
     ReadRegStr $2 HKCU "${REGKEY}" "ModRoot"

@@ -1,27 +1,31 @@
-# Windows installer v0.1.0-alpha.4
+# Windows installer v0.1.0-alpha.6
 
-[Download the setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.4/UniStation-0.1.0-alpha.4-win64-setup.exe).
-[Release notes and checksums](release-v0.1.0-alpha.4.md).
-The NSIS wizard is published as a prerelease for user review. It installs into an
-existing FreeCAD 1.1 profile; FreeCAD is external. Default parent directory:
-`%APPDATA%\FreeCAD\v1-1\Mod`. The installer is per-user, without elevation.
+[Download setup](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.6/UniStation-0.1.0-alpha.6-win64-setup.exe) · [Release notes](release-v0.1.0-alpha.6.md).
 
-Choose UniStation and/or AxisFlow, optional documentation and Start menu links,
-then the parent Mod directory. Both main components are selected by default.
-If installing UniStation alone, a compatible AxisFlow must already be present.
-Restart FreeCAD normally and select UniStation; no command-line launcher or
-separate candidate profile is needed.
+Close FreeCAD and run setup under the Windows account you will use for work.
+Confirm the detected FreeCAD.exe or browse to it. If none is found, choose a
+manual path or exit and install FreeCAD first. The accepted package range is
+FreeCAD 1.1.1–1.1.4, Windows x64 / Python 3.11. Version/file checks do not prove
+every ABI combination. FreeCAD is not bundled or downloaded automatically.
 
-Selected existing module folders are renamed into retained same-volume backup
-transactions under `Mod/.UniStation-Installer`. The uninstaller can remove
-selected managed components and restore their previous folders. Retired new
-folders and added files are retained as well. It never recursively deletes the
-shared Mod directory or resets FreeCAD configuration. Manual replacement without
-the ownership marker is preserved instead of being guessed to be installer-owned.
+Select UniStation/AxisFlow and optional documentation/shortcuts, then a parent
+directory named **Mod**. Default: `%APPDATA%\FreeCAD\v1-1\Mod`.
+Existing selected module folders are retained in same-volume transactions.
+If UniStation is selected without AxisFlow, a compatible AxisFlow must already
+be present in that Mod. The desktop and Start menu **UniStation - FreeCAD**
+shortcuts open the configured FreeCAD with UniStation active; create/open a
+document afterwards. The launcher uses this installation's data directory for
+the child process and keeps the current account's preferences.
 
-Alpha.4 includes the current 57 UniStation runtime files, including layers, Change Attributes, Edit Palette and PDF. The 34 AxisFlow component files remain unchanged. Wizard execution, uninstall and failure recovery still require separate validation. The executable is unsigned.
+Alpha.6 fixes the uninstaller's original-directory lookup. Upgrade alpha.5 into
+the same Mod before retrying uninstall. Ownership checks remain enabled;
+uninstall processes selected managed components and retains retired files and
+backups, without recursively deleting the shared Mod or resetting FreeCAD.
 
-[User guide](../packaging/installer/USER-GUIDE.md),
-[manual check](../packaging/installer/USER-CHECK.md),
-[build instructions](../packaging/installer/BUILD.md),
-[source](../packaging/installer/UniStation.nsi).
+Manual installation/launch and the alpha.6 uninstall retest passed in the
+reported scope. Full regression, forced failure recovery and every component
+combination remain outside that acceptance. The EXE is unsigned.
+
+[Detailed RU/EN guide](../packaging/installer/USER-GUIDE.md) ·
+[Manual check](../packaging/installer/USER-CHECK.md) ·
+[Build](../packaging/installer/BUILD.md).
