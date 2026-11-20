@@ -86,7 +86,7 @@ def prepare(root):
     manifest = {
         'schema_version': 1, 'version': version,
         'status': 'installation-candidate-user-validation-pending',
-        'product_baseline_commit': target['product_baseline_commit'],
+        'product_source': target['product_source'],
         'runtime_files': source_records,
         'files': {name: sha(data) for name, data in sorted(files.items())},
         'freecad_bundled': False, 'axisflow_bundled': False,

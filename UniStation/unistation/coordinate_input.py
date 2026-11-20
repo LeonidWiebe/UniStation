@@ -58,7 +58,7 @@ class CoordinateWindow(QtWidgets.QDialog):
         super().__init__(Gui.getMainWindow(), QtCore.Qt.Tool)
         self.setObjectName("unistation_coordinate_input")
         self.setModal(False)
-        bind(self, "setWindowTitle", "Coordinate Input")
+        bind(self, "setWindowTitle", "Key-in")
         self.resize(560, 190)
         self.session = None
         self.generation = None
@@ -175,7 +175,7 @@ class CoordinateCommand:
     def GetResources(self):
         return {
             "CmdType": "ForEdit NoTransaction",
-            "MenuText": QT_TRANSLATE_NOOP("UniStation_CoordinateInput", "Coordinate Input..."),
+            "MenuText": QT_TRANSLATE_NOOP("UniStation_CoordinateInput", "Key-in"),
             "ToolTip": QT_TRANSLATE_NOOP("UniStation_CoordinateInput",
                 "Open the separate coordinate input window"),
         }

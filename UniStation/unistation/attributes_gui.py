@@ -1,4 +1,4 @@
-"""Active color/style/weight toolbar with a disabled future layer selector."""
+"""Active level and drawing attributes, with reusable attribute pickers."""
 
 from unistation.i18n import (QT_TRANSLATE_NOOP, bind, tr, translated_button, translated_dialog_button, translated_label)
 
@@ -8,6 +8,7 @@ from PySide import QtCore, QtGui, QtWidgets
 
 from unistation import attributes
 from unistation import line_weights
+from unistation import levels
 from unistation.line_weight_widgets import LineWeightPanel, weight_icon
 from unistation.palette import PaletteError, same_document
 from unistation.palette_gui import _require_idle, _swatch_style
@@ -18,6 +19,7 @@ STYLE_COMMAND = "UniStation_ActiveLineStyle"
 WEIGHT_COMMAND = "UniStation_ActiveLineWeight"
 LAYER_COMMAND = "UniStation_ActiveLayer"
 STYLE_LABELS = {
+    attributes.BY_LEVEL: QT_TRANSLATE_NOOP('UniStation', 'By level'),
     "Solid": QT_TRANSLATE_NOOP('UniStation', 'Solid'),
     "Dashed": QT_TRANSLATE_NOOP('UniStation', 'Dashed'),
     "Dotted": QT_TRANSLATE_NOOP('UniStation', 'Dotted'),
@@ -27,7 +29,7 @@ _controller = None
 
 
 def register():
-    Gui.addCommand(LAYER_COMMAND, PendingLayerCommand())
+    Gui.addCommand(LAYER_COMMAND, ActiveLayerCommand())
     Gui.addCommand(COMMAND, ActiveColorCommand())
     Gui.addCommand(STYLE_COMMAND, ActiveLineStyleCommand())
     Gui.addCommand(WEIGHT_COMMAND, ActiveLineWeightCommand())
@@ -82,18 +84,20 @@ def _check_context(expected):
         raise PaletteError(tr('The command changed. Reopen the attribute picker.'))
 
 
-class PendingLayerCommand:
+class ActiveLayerCommand:
     def GetResources(self):
         return {
+            "CmdType": "ForEdit NoTransaction",
             "MenuText": QT_TRANSLATE_NOOP('UniStation_ActiveLayer', 'Layer'),
-            "ToolTip": QT_TRANSLATE_NOOP('UniStation_ActiveLayer', 'Layer selection — not available yet'),
+            "ToolTip": QT_TRANSLATE_NOOP('UniStation_ActiveLayer', 'Choose the active level'),
         }
 
     def IsActive(self):
-        return False
+        return _can_choose()
 
     def Activated(self):
-        pass
+        if _controller is not None:
+            _controller.open_layer_popup()
 
 
 class ActiveColorCommand:
@@ -132,7 +136,7 @@ class ActiveLineWeightCommand:
     def GetResources(self):
         return {"CmdType": "ForEdit NoTransaction",
                 "MenuText": QT_TRANSLATE_NOOP('UniStation_ActiveLineWeight', 'Active line weight'),
-                "ToolTip": QT_TRANSLATE_NOOP('UniStation_ActiveLineWeight', 'Choose the line weight index for new UniStation elements: 0..31')}
+                "ToolTip": QT_TRANSLATE_NOOP('UniStation_ActiveLineWeight', 'Choose the line weight for new UniStation elements')}
 
     def IsActive(self):
         return _can_choose()
@@ -145,19 +149,26 @@ class ActiveLineWeightCommand:
 class ColorPanel(QtWidgets.QWidget):
     """Selection is provisional until OK; this widget never edits geometry."""
 
-    def __init__(self, accept, cancel, parent):
+    def __init__(self, accept, cancel, parent, *, for_level=False, title=None):
         super().__init__(parent)
         self.accept = accept
         self.cancel = cancel
         self.colors = None
         self.previous = None
         layout = QtWidgets.QVBoxLayout(self)
-        self.heading = translated_label('Color of new elements')
-        layout.addWidget(self.heading)
+        layout.addWidget(translated_label(title) if title else
+                         translated_label('Level color') if for_level else translated_label('Color of new elements'))
+        self.by_level = None
+        if not for_level:
+            self.by_level = translated_button('By level')
+            self.by_level.clicked.connect(lambda: self.spin.setValue(attributes.BY_LEVEL))
+            layout.addWidget(self.by_level)
         row = QtWidgets.QHBoxLayout()
         row.addWidget(translated_label('Index:'))
         self.spin = QtWidgets.QSpinBox()
-        self.spin.setRange(0, 255)
+        self.spin.setRange(0 if for_level else attributes.BY_LEVEL, 255)
+        if not for_level:
+            bind(self.spin, 'setSpecialValueText', 'By level')
         bind(self.spin, 'setAccessibleName', 'Active color index')
         row.addWidget(self.spin)
         self.sample = QtWidgets.QLabel()
@@ -186,7 +197,7 @@ class ColorPanel(QtWidgets.QWidget):
         buttons = QtWidgets.QDialogButtonBox()
         self.ok = translated_dialog_button(buttons, 'OK', QtWidgets.QDialogButtonBox.AcceptRole)
         translated_dialog_button(buttons, 'Cancel', QtWidgets.QDialogButtonBox.RejectRole)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self.confirm)
         buttons.rejected.connect(self.cancel)
         layout.addWidget(buttons)
         self.spin.valueChanged.connect(self.show_index)
@@ -206,7 +217,7 @@ class ColorPanel(QtWidgets.QWidget):
                     elif isinstance(watched, QtWidgets.QAbstractButton):
                         watched.click()
                     else:
-                        self.accept()
+                        self.confirm()
                 return True
         return super().eventFilter(watched, event)
 
@@ -216,6 +227,8 @@ class ColorPanel(QtWidgets.QWidget):
         self.error.hide()
         self.ok.setEnabled(True)
         self.spin.setEnabled(True)
+        if self.by_level is not None:
+            self.by_level.setEnabled(True)
         for value, button in enumerate(self.buttons):
             rgb = colors[value]
             button.setEnabled(True)
@@ -228,6 +241,8 @@ class ColorPanel(QtWidgets.QWidget):
     def show_error(self, message):
         self.colors = None
         self.spin.setEnabled(False)
+        if self.by_level is not None:
+            self.by_level.setEnabled(False)
         self.ok.setEnabled(False)
         for button in self.buttons:
             button.setEnabled(False)
@@ -247,6 +262,11 @@ class ColorPanel(QtWidgets.QWidget):
             previous = self.buttons[self.previous]
             previous.setText("")
             previous.setStyleSheet(_swatch_style(self.colors[self.previous], False))
+        if index == attributes.BY_LEVEL:
+            self.previous = None
+            self.sample.setStyleSheet("")
+            bind(self.detail, 'setText', 'By level')
+            return
         rgb = self.colors[index]
         self.buttons[index].setStyleSheet(_swatch_style(rgb, True))
         self.buttons[index].setText("•")
@@ -254,19 +274,26 @@ class ColorPanel(QtWidgets.QWidget):
         bind(self.detail, 'setText', 'Index %d   RGB %d, %d, %d', percent=(index, *rgb))
         self.previous = index
 
+    def confirm(self):
+        if self.ok.isEnabled() and self.colors is not None:
+            self.spin.interpretText()
+            self.accept(self.spin.value())
+
 
 class LineStylePanel(QtWidgets.QWidget):
     """Four discrete choices; a click confirms, dismissal leaves settings intact."""
 
-    def __init__(self, accept, cancel, parent):
+    def __init__(self, accept, cancel, parent, *, for_level=False, title=None):
         super().__init__(parent)
         self.accept = accept
         self.cancel = cancel
         self.current = None
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(translated_label('Style of new elements'))
+        layout.addWidget(translated_label(title) if title else translated_label('Level line style')
+                         if for_level else translated_label('Style of new elements'))
         self.buttons = {}
-        for style in attributes.LINE_STYLES:
+        styles = attributes.LINE_STYLES if for_level else (attributes.BY_LEVEL, *attributes.LINE_STYLES)
+        for style in styles:
             button = QtWidgets.QToolButton()
             bind(button, "setText", STYLE_LABELS[style])
             bind(button, "setAccessibleName", STYLE_LABELS[style])
@@ -307,7 +334,7 @@ class LineStylePanel(QtWidgets.QWidget):
         for value, button in self.buttons.items():
             button.setEnabled(True)
             button.setChecked(value == style)
-            button.setIcon(_line_style_icon(value, self.palette()))
+            button.setIcon(_line_style_icon(None if value == attributes.BY_LEVEL else value, self.palette()))
 
     def show_error(self, message):
         self.current = None
@@ -316,6 +343,58 @@ class LineStylePanel(QtWidgets.QWidget):
             button.setChecked(False)
         self.error.setText(message)
         self.error.show()
+
+
+class LevelMenuRow(QtWidgets.QWidget):
+    """A menu action with trailing color, style and weight samples."""
+
+    SAMPLE_WIDTHS = (24, 40, 40)
+    SAMPLE_HEIGHT = 20
+    SAMPLE_MARGIN = 6
+
+    def __init__(self, menu, action, name, samples):
+        super().__init__(menu)
+        self.menu = menu
+        self.action = action
+        self.name = name
+        self.samples = samples
+        # Let QMenu handle hit testing, selection and keyboard navigation.
+        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+
+    def style_option(self):
+        option = QtWidgets.QStyleOptionMenuItem()
+        self.menu.initStyleOption(option, self.action)
+        return option
+
+    def sizeHint(self):
+        option = self.style_option()
+        metrics = option.fontMetrics
+        text_size = QtCore.QSize(metrics.horizontalAdvance(self.name), metrics.height())
+        size = self.menu.style().sizeFromContents(QtWidgets.QStyle.CT_MenuItem,
+                                                  option, text_size, self.menu)
+        return QtCore.QSize(size.width() + sum(self.SAMPLE_WIDTHS) + self.SAMPLE_MARGIN,
+                           max(size.height(), self.SAMPLE_HEIGHT + 2))
+
+    def paintEvent(self, event):
+        option = self.style_option()
+        option.rect = self.rect()
+        if self.menu.activeAction() is self.action:
+            option.state |= QtWidgets.QStyle.State_Selected
+        metrics = option.fontMetrics
+        text_width = max(0, metrics.horizontalAdvance(self.name) + self.width() - self.sizeHint().width())
+        option.text = metrics.elidedText(self.name, QtCore.Qt.ElideRight, text_width).replace("&", "&&")
+
+        painter = QtGui.QPainter(self)
+        try:
+            painter.setFont(option.font)
+            self.menu.style().drawControl(QtWidgets.QStyle.CE_MenuItem, option, painter, self.menu)
+            x = self.width() - sum(self.SAMPLE_WIDTHS) - self.SAMPLE_MARGIN
+            y = (self.height() - self.SAMPLE_HEIGHT) // 2
+            for icon, width in zip(self.samples, self.SAMPLE_WIDTHS):
+                icon.paint(painter, QtCore.QRect(x, y, width, self.SAMPLE_HEIGHT))
+                x += width
+        finally:
+            painter.end()
 
 
 class AttributesController(QtCore.QObject):
@@ -336,9 +415,14 @@ class AttributesController(QtCore.QObject):
         self.weight_context = None
         self.initial_weight = None
         self.layer_buttons = []
-        # Empty, unreachable menu provides the native dropdown arrow only.
+        self.layer_document = None
         self.layer_menu = QtWidgets.QMenu(Gui.getMainWindow())
-        self.layer_menu.setObjectName("UstnActiveLayerPlaceholder")
+        self.layer_menu.setObjectName("UstnActiveLayerPopup")
+        self.layer_menu.setMinimumWidth(260)
+        self.layer_menu.setToolTipsVisible(True)
+        self.layer_menu.setStyleSheet("QMenu#UstnActiveLayerPopup { menu-scrollable: 1; }")
+        self.layer_menu.aboutToShow.connect(self.prepare_layer)
+        self.layer_menu.aboutToHide.connect(self.forget_layer_document)
         self.menu = QtWidgets.QMenu(Gui.getMainWindow())
         self.menu.setObjectName("UstnActiveColorPopup")
         self.menu.setToolTipsVisible(True)
@@ -424,11 +508,26 @@ class AttributesController(QtCore.QObject):
                     else:
                         self.buttons.append(button)
 
-    def attach_layer_buttons(self):
+    def refresh_layer(self, document):
         actions = self.actions(LAYER_COMMAND)
         self.layer_buttons = []
+        selected = None
+        name = tr('Layer')
+        tip = tr('Choose the active level')
+        if document is not None:
+            try:
+                _records, selected = attributes.level_choices(document)
+                name = selected.name
+                tip = tr('Active level: {}').format(name)
+                if selected.locked:
+                    tip += "\n" + tr('Choose an unlocked level to draw or copy into.')
+                if not selected.available_for_drawing:
+                    tip += "\n" + tr('Choose a visible, thawed level to draw.')
+            except Exception as exc:
+                tip = str(exc)
         for action in actions:
-            action.setEnabled(False)
+            action.setIconText(name)
+            action.setToolTip(tip)
         for toolbar in Gui.getMainWindow().findChildren(QtWidgets.QToolBar):
             for action in toolbar.actions():
                 if action not in actions:
@@ -439,27 +538,32 @@ class AttributesController(QtCore.QObject):
                     button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
                     button.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
                     button.setMinimumWidth(0)
-                    button.setEnabled(False)
+                    button.setText(name)
                     self.layer_buttons.append(button)
+        return selected
 
     def refresh(self):
         if not self.running:
             return
         try:
-            self.attach_layer_buttons()
+            document = App.ActiveDocument
+            selected = self.refresh_layer(document)
             actions = self.actions()
             style_actions = self.actions(STYLE_COMMAND)
             weight_actions = self.actions(WEIGHT_COMMAND)
             self.attach_buttons(actions, style_actions, weight_actions)
-            document = App.ActiveDocument
             if document is None:
                 text, rgb = "—", None
                 tip = tr('Open a document to choose the active color.')
             else:
                 try:
                     index, colors = attributes.color_snapshot(document)
-                    text, rgb = str(index), colors[index]
-                    tip = (tr('Active color of new elements: index %d, RGB %d, %d, %d.\nAvailable before or during drawing commands.') % (index, *rgb))
+                    if index == attributes.BY_LEVEL:
+                        text = tip = tr('By level')
+                        rgb = colors[selected.color_index] if selected is not None else None
+                    else:
+                        text, rgb = str(index), colors[index]
+                        tip = (tr('Active color of new elements: index %d, RGB %d, %d, %d.\nAvailable before or during drawing commands.') % (index, *rgb))
                 except Exception as exc:
                     text, rgb = "?", None
                     tip = tr('Active color is unavailable: ') + str(exc)
@@ -479,6 +583,8 @@ class AttributesController(QtCore.QObject):
                 try:
                     style = attributes.active_line_style(document)
                     style_text = tr(STYLE_LABELS[style])
+                    if style == attributes.BY_LEVEL:
+                        style = attributes.LINE_STYLES[selected.line_style] if selected is not None else None
                     style_tip = (tr('Active style of new elements: ') + style_text
                                  + tr('.\nAvailable before or during drawing commands.'))
                 except Exception as exc:
@@ -497,8 +603,12 @@ class AttributesController(QtCore.QObject):
             else:
                 try:
                     index, widths = attributes.weight_snapshot(document)
-                    weight_text, width = str(index), widths[index]
-                    weight_tip = (tr('Active line weight: index {0}, screen width {1:g} px.\nAvailable before or during drawing commands.').format(index, width))
+                    if index == attributes.BY_LEVEL:
+                        weight_text = weight_tip = tr('By level')
+                        width = widths[selected.weight_index] if selected is not None else None
+                    else:
+                        weight_text, width = str(index), widths[index]
+                        weight_tip = (tr('Active line weight: index {0}, screen width {1:g} px.\nAvailable before or during drawing commands.').format(index, width))
                 except Exception as exc:
                     weight_text, width = "?", None
                     weight_tip = tr('Active line weight is unavailable: ') + str(exc)
@@ -513,6 +623,67 @@ class AttributesController(QtCore.QObject):
                 _sync_drawing(document)
         except Exception as exc:
             App.Console.PrintError(tr('UniStation: Attributes toolbar: ') + str(exc) + "\n")
+
+    def open_layer_popup(self):
+        button = next((item for item in self.layer_buttons if item.isVisible()), None)
+        point = button.mapToGlobal(QtCore.QPoint(0, button.height())) if button else QtGui.QCursor.pos()
+        self.layer_menu.popup(point)
+
+    def prepare_layer(self):
+        self.forget_layer_document()
+        self.layer_menu.clear()
+        try:
+            context = _require_attribute_access()
+            document = App.ActiveDocument
+            if document is None:
+                raise PaletteError(tr('No active document.'))
+            records, selected = attributes.level_choices(document)
+            _index, colors = attributes.color_snapshot(document)
+            _table, widths = line_weights.widths_for_display(document)
+            palette = self.layer_menu.palette()
+            for level in records:
+                action = QtWidgets.QWidgetAction(self.layer_menu)
+                action.setText(level.name.replace("&", "&&"))
+                tooltip = level.description or level.name
+                if level.global_freeze:
+                    tooltip += "\n" + tr('Frozen level')
+                elif not level.global_display:
+                    tooltip += "\n" + tr('Global display is off')
+                if level.locked:
+                    tooltip += "\n" + tr('Locked level')
+                action.setToolTip(tooltip)
+                font = self.layer_menu.font()
+                font.setBold(level.identifier == selected.identifier)
+                action.setFont(font)
+                samples = (_color_icon(colors[level.color_index]),
+                           _line_style_icon(attributes.LINE_STYLES[level.line_style], palette, sample_width=36),
+                           weight_icon(widths[level.weight_index], palette, sample_width=36))
+                row = LevelMenuRow(self.layer_menu, action, level.name, samples)
+                action.setDefaultWidget(row)
+                # QMenu hides before triggering the action, so the callback
+                # carries its own document and drawing context.
+                action.triggered.connect(lambda checked=False, identifier=level.identifier:
+                                         self.apply_layer(document, context, identifier))
+                self.layer_menu.addAction(action)
+            self.layer_document = document
+        except Exception as exc:
+            self.layer_menu.clear()
+            self.layer_menu.addAction(str(exc)).setEnabled(False)
+
+    def forget_layer_document(self):
+        self.layer_document = None
+
+    def apply_layer(self, document, context, identifier):
+        if not self.running:
+            return
+        try:
+            _check_context(context)
+            attributes.set_active_level(document, identifier)
+            _sync_drawing(document)
+        except Exception as exc:
+            App.Console.PrintWarning("UniStation: " + str(exc) + "\n")
+        finally:
+            self.schedule_refresh()
 
     def open_popup(self):
         try:
@@ -661,7 +832,7 @@ class AttributesController(QtCore.QObject):
         self.initial_index = None
         self.initial_colors = None
 
-    def apply(self):
+    def apply(self, chosen):
         if self.document is None or not self.panel.ok.isEnabled():
             return
         try:
@@ -671,8 +842,6 @@ class AttributesController(QtCore.QObject):
             index, colors = attributes.color_snapshot(document)
             if index != self.initial_index or colors != self.initial_colors:
                 raise PaletteError(tr('The active settings or palette changed. Reopen the color picker.'))
-            self.panel.spin.interpretText()
-            chosen = self.panel.spin.value()
             attributes.set_active_color(document, chosen)
             _sync_drawing(document)
             self.menu.close()
@@ -683,6 +852,8 @@ class AttributesController(QtCore.QObject):
             App.Console.PrintError(tr('UniStation: active color: ') + str(exc) + "\n")
 
     def changed(self, document=None):
+        if self.layer_document is not None and (document is None or document is self.layer_document):
+            self.layer_menu.close()
         if self.document is not None and (document is None or document is self.document):
             self.menu.close()
         if self.style_document is not None and (document is None or document is self.style_document):
@@ -715,6 +886,7 @@ class AttributesController(QtCore.QObject):
 
     def slotChangedObject(self, obj, prop):
         if prop in (attributes.SCHEMA, attributes.COLOR_INDEX, attributes.LINE_STYLE, attributes.LINE_WEIGHT,
+                    attributes.ACTIVE_LEVEL, attributes.LEVEL_SOURCES, levels.SCHEMA, levels.DATA,
                     line_weights.SCHEMA, line_weights.WIDTHS, line_weights.INDEX,
                     "UstnPaletteSchema", "UstnPaletteData", "UstnColorMode"):
             self.changed(obj.Document)

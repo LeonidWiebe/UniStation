@@ -5,7 +5,7 @@ point-input API and FreeCAD/Draft geometry factories. It does not patch FreeCAD
 or replace Draft's own Line tool.
 
 ```text
-InitGui.py: commands, menus, six toolbars, activation/teardown
+InitGui.py: commands, menus, five toolbars, activation/teardown
   gui.py: FreeCAD/Qt adapter, Coin preview, document/view guards
     InputSession: AxisFlow ownership, callbacks, generations, cleanup
       LineSession / WireSession / PlanarSession(Circle, Arc) / TransformSession
@@ -46,7 +46,7 @@ clears on context changes. Its close action leaves drawing active.
 
 `palette.py`, `attributes.py` and `line_weights.py` maintain document-owned
 `Ustn` metadata. Active attributes apply to new objects; separate palette tools
-can change existing supported objects. No layer model exists yet.
+can change existing supported objects. levels.py and element_attributes.py store FCStd layer definitions, assignments and persistent attribute sources; level visibility/UI adapters enforce supported display and Lock behavior. The direct PDF pipeline exports planar XY geometry.
 
 ## По-русски
 
@@ -59,4 +59,4 @@ Circle/Arc читают текущее состояние компаса. При
 сохраняются. Живые атрибуты обновляют Coin, затем перечитываются перед commit.
 Reset откатывает состояние команды; Cancel полностью завершает ввод.
 Палитра, активные атрибуты и толщины хранятся в метаданных `Ustn` документа;
-функционал слоёв ещё отсутствует.
+таблица слоёв и источники атрибутов также сохраняются в FCStd.

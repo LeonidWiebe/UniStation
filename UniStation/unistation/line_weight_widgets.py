@@ -1,6 +1,7 @@
 """Scrollable weight-index picker; document writes belong to its controller."""
 
-from unistation.i18n import (bind, tr, translated_dialog_button, translated_label)
+from unistation import attributes
+from unistation.i18n import (bind, tr, translated_button, translated_dialog_button, translated_label)
 
 from PySide import QtCore, QtGui, QtWidgets
 
@@ -8,7 +9,7 @@ from unistation.line_weights import COUNT
 
 
 class LineWeightPanel(QtWidgets.QWidget):
-    def __init__(self, accept, cancel, parent):
+    def __init__(self, accept, cancel, parent, *, for_level=False, title=None):
         super().__init__(parent)
         self.accept = accept
         self.cancel = cancel
@@ -16,11 +17,19 @@ class LineWeightPanel(QtWidgets.QWidget):
         self.previous = None
         self.setMinimumWidth(320)
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(translated_label('Line weight of new elements'))
+        layout.addWidget(translated_label(title) if title else translated_label('Level line weight')
+                         if for_level else translated_label('Line weight of new elements'))
+        self.by_level = None
+        if not for_level:
+            self.by_level = translated_button('By level')
+            self.by_level.clicked.connect(lambda: self.spin.setValue(attributes.BY_LEVEL))
+            layout.addWidget(self.by_level)
         row = QtWidgets.QHBoxLayout()
         row.addWidget(translated_label('Index:'))
         self.spin = QtWidgets.QSpinBox()
-        self.spin.setRange(0, COUNT - 1)
+        self.spin.setRange(0 if for_level else attributes.BY_LEVEL, COUNT - 1)
+        if not for_level:
+            bind(self.spin, 'setSpecialValueText', 'By level')
         bind(self.spin, 'setAccessibleName', 'Active line weight index')
         row.addWidget(self.spin)
         row.addStretch()
@@ -85,6 +94,8 @@ class LineWeightPanel(QtWidgets.QWidget):
         self.error.hide()
         self.ok.setEnabled(True)
         self.spin.setEnabled(True)
+        if self.by_level is not None:
+            self.by_level.setEnabled(True)
         for value, button in enumerate(self.buttons):
             button.setEnabled(True)
             button.setChecked(False)
@@ -98,6 +109,10 @@ class LineWeightPanel(QtWidgets.QWidget):
             return
         if self.previous is not None:
             self.buttons[self.previous].setChecked(False)
+        if index == attributes.BY_LEVEL:
+            self.previous = None
+            bind(self.detail, 'setText', 'By level')
+            return
         self.buttons[index].setChecked(True)
         bind(self.detail, 'setText', 'Index {0}: screen width {1:g} px', index, self.widths[index])
         self.scroll.ensureWidgetVisible(self.buttons[index])
@@ -106,7 +121,8 @@ class LineWeightPanel(QtWidgets.QWidget):
     def focus_index(self):
         self.spin.setFocus()
         self.spin.selectAll()
-        self.scroll.ensureWidgetVisible(self.buttons[self.spin.value()])
+        if self.spin.value() != attributes.BY_LEVEL:
+            self.scroll.ensureWidgetVisible(self.buttons[self.spin.value()])
 
     def confirm(self):
         if self.widths is not None and self.ok.isEnabled():
@@ -116,6 +132,8 @@ class LineWeightPanel(QtWidgets.QWidget):
     def show_error(self, message):
         self.widths = None
         self.spin.setEnabled(False)
+        if self.by_level is not None:
+            self.by_level.setEnabled(False)
         self.ok.setEnabled(False)
         for button in self.buttons:
             button.setEnabled(False)

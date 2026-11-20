@@ -1,4 +1,4 @@
-"""Native title bars and profile layout for UniStation's own toolbars only."""
+"""Native titles, content widths and saved positions for UniStation toolbars."""
 
 from unistation.i18n import TOOLBAR_LABELS, tr
 
@@ -16,6 +16,9 @@ FRAME_HINTS = (QtCore.Qt.FramelessWindowHint | QtCore.Qt.X11BypassWindowManagerH
                | QtCore.Qt.WindowContextHelpButtonHint)
 TITLE_HINTS = (QtCore.Qt.CustomizeWindowHint | QtCore.Qt.WindowTitleHint
                | QtCore.Qt.WindowSystemMenuHint | QtCore.Qt.WindowCloseButtonHint)
+WIDTH_EVENTS = (QtCore.QEvent.ActionAdded, QtCore.QEvent.ActionRemoved,
+                QtCore.QEvent.ActionChanged, QtCore.QEvent.LayoutRequest,
+                QtCore.QEvent.FontChange, QtCore.QEvent.StyleChange, QtCore.QEvent.LanguageChange)
 _controller = None
 
 
@@ -156,6 +159,7 @@ class FloatingTitle(QtCore.QObject):
             App.Console.PrintWarning(tr('UniStation: position of toolbar “') + tr(TOOLBAR_LABELS[self.name])
                                      + tr('” was not restored: ') + str(exc) + "\n")
         self.original_hints = None
+        self.original_maximum_width = toolbar.maximumWidth()
         self.delete_on_close = toolbar.testAttribute(QtCore.Qt.WA_DeleteOnClose)
         # Native QWidget.close() must hide the toolbar and update toggleViewAction,
         # not delete the commands, controls or saved active attribute values.
@@ -171,6 +175,9 @@ class FloatingTitle(QtCore.QObject):
         self.settle_timer.timeout.connect(self.finish_restore)
         toolbar.installEventFilter(self)
         toolbar.topLevelChanged.connect(self.top_level_changed)
+        toolbar.orientationChanged.connect(self.schedule)
+        toolbar.iconSizeChanged.connect(self.schedule)
+        toolbar.toolButtonStyleChanged.connect(self.schedule)
         toolbar.destroyed.connect(self.toolbar_deleted)
         self.schedule()
 
@@ -197,8 +204,10 @@ class FloatingTitle(QtCore.QObject):
                 self.parent().flush_profile()
             elif kind == QtCore.QEvent.Show and self.ready and not self.user_layout:
                 self.request_restore()
-        if event.type() in (QtCore.QEvent.Show, QtCore.QEvent.WinIdChange,
-                            QtCore.QEvent.ParentChange, QtCore.QEvent.MouseButtonRelease):
+        if kind in WIDTH_EVENTS or kind in (
+                QtCore.QEvent.Show, QtCore.QEvent.WinIdChange, QtCore.QEvent.ParentChange,
+                QtCore.QEvent.Move, QtCore.QEvent.MouseButtonRelease,
+                QtCore.QEvent.NonClientAreaMouseButtonRelease):
             self.schedule()
         # Mouse/close/docking events continue through the native FreeCAD/Qt code.
         return False
@@ -308,7 +317,6 @@ class FloatingTitle(QtCore.QObject):
                 self.restore_saved()
             if not toolbar.isFloating():
                 self.original_hints = None
-                return  # Never change flags/layout/height of a docked toolbar.
             if not toolbar.isVisible():
                 return  # In particular, do not reopen a toolbar closed by the user.
             # Qt recreates the frameless platform window while unplugging and at
@@ -316,6 +324,9 @@ class FloatingTitle(QtCore.QObject):
             # for release instead of recreating a window that owns a mouse grab.
             if QtWidgets.QApplication.mouseButtons() != QtCore.Qt.NoButton:
                 self.timer.start(40)
+                return
+            if not toolbar.isFloating():
+                self.fit_width()
                 return
             flags = toolbar.windowFlags()
             wanted = (flags & ~FRAME_HINTS) | TITLE_HINTS
@@ -329,6 +340,7 @@ class FloatingTitle(QtCore.QObject):
                 self.save_timer.stop()
                 self.restoring = True
                 self.settle_timer.start(150)
+            self.fit_width()
         except RuntimeError:
             self.toolbar_deleted()
         except Exception as exc:
@@ -366,7 +378,7 @@ class FloatingTitle(QtCore.QObject):
 
     def restore_rect(self, state):
         toolbar = self.toolbar
-        x, y, width, height = state["rect"]
+        x, y, _width, height = state["rect"]
         screens = QtWidgets.QApplication.screens()
         screen = next((item for item in screens if item.name() == state["screen"]), None)
         if screen is None:
@@ -377,14 +389,47 @@ class FloatingTitle(QtCore.QObject):
             return
         area = screen.availableGeometry()
         frame = toolbar.frameGeometry()
-        margin_w = max(0, frame.width() - toolbar.width())
         margin_h = max(0, frame.height() - toolbar.height())
         toolbar.setOrientation(QtCore.Qt.Vertical if state["orientation"] == "vertical"
                                else QtCore.Qt.Horizontal)
-        toolbar.resize(min(width, max(1, area.width() - margin_w)),
-                       min(height, max(1, area.height() - margin_h)))
+        toolbar.resize(toolbar.width(), min(height, max(1, area.height() - margin_h)))
         toolbar.move(x, y)
+        self.fit_width(area)
         self.keep_on_screen(area)
+
+    def fit_width(self, area=None):
+        toolbar = self.toolbar
+        # Qt's hint includes the actions that would fit at full width, even
+        # when the current docked row has put some of them in overflow.
+        natural = toolbar.sizeHint().expandedTo(toolbar.minimumSizeHint()).width()
+        if natural <= 0:
+            return
+        floating = toolbar.isFloating()
+        limit = self.original_maximum_width
+        if floating:
+            screen = toolbar.screen()
+            if area is None and screen is not None:
+                area = screen.availableGeometry()
+            if area is not None:
+                frame_width = max(0, toolbar.frameGeometry().width() - toolbar.width())
+                limit = min(limit, max(1, area.width() - frame_width))
+        width = max(toolbar.minimumWidth(), min(natural, limit))
+        if toolbar.maximumWidth() == width and (not floating or toolbar.width() == width):
+            return
+
+        # A cap lets docked rows shrink when space is tight. The viewport and
+        # screen-driven moves below do not replace the user's stored position.
+        was_updating = self.updating
+        self.updating = True
+        try:
+            if toolbar.maximumWidth() != width:
+                toolbar.setMaximumWidth(width)
+            if floating and toolbar.width() != width:
+                toolbar.resize(width, toolbar.height())
+            if floating:
+                self.keep_on_screen(area)
+        finally:
+            self.updating = was_updating
 
     def swap_flags(self, flags):
         toolbar = self.toolbar
@@ -433,7 +478,11 @@ class FloatingTitle(QtCore.QObject):
             try:
                 toolbar.removeEventFilter(self)
                 toolbar.topLevelChanged.disconnect(self.top_level_changed)
+                toolbar.orientationChanged.disconnect(self.schedule)
+                toolbar.iconSizeChanged.disconnect(self.schedule)
+                toolbar.toolButtonStyleChanged.disconnect(self.schedule)
                 toolbar.destroyed.disconnect(self.toolbar_deleted)
+                toolbar.setMaximumWidth(self.original_maximum_width)
                 if toolbar.isFloating() and self.original_hints is not None:
                     self.swap_flags((toolbar.windowFlags() & ~FRAME_HINTS) | self.original_hints)
                 toolbar.setAttribute(QtCore.Qt.WA_DeleteOnClose, self.delete_on_close)

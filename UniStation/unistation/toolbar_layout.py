@@ -11,7 +11,7 @@ PATH = "User parameter:BaseApp/Preferences/Mod/UniStation/Toolbars"
 # Keep the existing UniStation -> Drawing preference key for saved profiles.
 # The new drawing toolbar has its own key and must not reuse that old geometry.
 KEYS = {"UniStation": "Drawing", "Рисование": "DrawingTools",
-        "Манипуляции": "Manipulations", "Палитра": "Palette", "Атрибуты": "Attributes",
+        "Манипуляции": "Manipulations", "Атрибуты": "Attributes",
         "Привязки": "Snapping"}
 
 

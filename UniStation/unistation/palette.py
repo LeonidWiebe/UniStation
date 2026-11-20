@@ -406,9 +406,12 @@ def color_drift(obj, colors):
 
 def assign_index(document, objects, index):
     """Create the palette if needed and set one index on all objects."""
+    from unistation.attributes import use_own_element_color
+
     _require_index_value(index)
     same_document(document)
     targets = _require_targets(document, objects)
+    _require_editable_targets(document, targets)
     palette = classify_palettes(document)
     if palette is None and indexed_objects(document):
         raise PaletteError(
@@ -418,6 +421,8 @@ def assign_index(document, objects, index):
 
     def change():
         apply_index_in_transaction(document, targets, index)
+        for obj in targets:
+            use_own_element_color(obj)
 
     _transaction(document, tr('UniStation: indexed color'), change)
 
@@ -441,10 +446,13 @@ def apply_index_in_transaction(document, objects, index):
 
 def release_rgb(document, objects):
     """Leave indexed mode and keep the RGB that is already visible."""
+    from unistation.attributes import use_own_element_color
+
     same_document(document)
     targets = [obj for obj in _require_targets(document, objects) if _color_mode(obj) == MODE_INDEX]
     if not targets:
         raise PaletteError(tr('The selected objects have no indexed color.'))
+    _require_editable_targets(document, targets)
 
     def change():
         same_document(document)
@@ -452,6 +460,7 @@ def release_rgb(document, objects):
             if _color_mode(obj) != MODE_INDEX:
                 raise PaletteError(tr('The object set changed. The command was canceled.'))
             _set_direct(obj)
+            use_own_element_color(obj)
 
     _transaction(document, tr('UniStation: direct RGB'), change)
 
@@ -706,6 +715,16 @@ def _require_view(obj):
     if view is None or not hasattr(view, "LineColor"):
         raise PaletteError(tr('Object “') + getattr(obj, "Label", "") + tr('” has no line color.'))
     return view
+
+
+def _require_editable_targets(document, targets):
+    from unistation.levels import LevelError, available_levels, require_editable_elements
+
+    try:
+        by_id = {level.identifier: level for level in available_levels(document)}
+        require_editable_elements(targets, by_id)
+    except LevelError as exc:
+        raise PaletteError(str(exc)) from exc
 
 
 def _line_color(rgb):

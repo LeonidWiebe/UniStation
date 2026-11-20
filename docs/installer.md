@@ -1,7 +1,7 @@
-# Windows installer v0.1.0-alpha.3
+# Windows installer v0.1.0-alpha.4
 
-[Download the setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe).
-[Release notes and checksums](release-v0.1.0-alpha.3.md).
+[Download the setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.4/UniStation-0.1.0-alpha.4-win64-setup.exe).
+[Release notes and checksums](release-v0.1.0-alpha.4.md).
 The NSIS wizard is published as a prerelease for user review. It installs into an
 existing FreeCAD 1.1 profile; FreeCAD is external. Default parent directory:
 `%APPDATA%\FreeCAD\v1-1\Mod`. The installer is per-user, without elevation.
@@ -19,10 +19,7 @@ folders and added files are retained as well. It never recursively deletes the
 shared Mod directory or resets FreeCAD configuration. Manual replacement without
 the ownership marker is preserved instead of being guessed to be installer-owned.
 
-The 45 product runtime files and accepted AxisFlow binary/source are unchanged.
-Alpha.2 remains published unchanged; this new wizard has not yet received its
-own user acceptance. No installer/FreeCAD/GUI behavioral run was performed in
-preparing it. The executable is unsigned.
+Alpha.4 includes the current 57 UniStation runtime files, including layers, Change Attributes, Edit Palette and PDF. The 34 AxisFlow component files remain unchanged. Wizard execution, uninstall and failure recovery still require separate validation. The executable is unsigned.
 
 [User guide](../packaging/installer/USER-GUIDE.md),
 [manual check](../packaging/installer/USER-CHECK.md),

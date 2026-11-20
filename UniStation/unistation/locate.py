@@ -35,15 +35,16 @@ def cancel():
         _current.stop()
 
 
-def begin(document, predicate, continuation):
+def begin(document, predicate, continuation, *, task=None):
     """Start locate. ``predicate`` returns an error string or None.
 
     ``continuation`` receives a list with the accepted object and is called
     after locate has stopped, from the Qt event loop, not from a Coin callback.
+    An existing task may keep its form visible and receive locate_finished(session).
     """
     if is_active():
         raise LocateError(tr('Element locate is already active.'))
-    session = _Session(document, predicate, continuation)
+    session = _Session(document, predicate, continuation, task)
     session.start()
     return session
 
@@ -112,11 +113,12 @@ class _Observer:
 
 
 class _Session(ResettableCommand):
-    def __init__(self, document, predicate, continuation):
+    def __init__(self, document, predicate, continuation, task=None):
         self.document = document
         self.doc_name = document.Name
         self.predicate = predicate
         self.continuation = continuation
+        self.task = task
         self.view = None
         self.viewer = None
         self.widget = None
@@ -179,9 +181,10 @@ class _Session(ResettableCommand):
             self.callback_fn = self._on_event
             self.callback = self.view.addEventCallback("SoEvent", self.callback_fn)
             self._install_filter()
-            self.panel = _Panel(self)
-            Gui.Control.showDialog(self.panel)
-            self.panel_shown = True
+            if self.task is None:
+                self.panel = _Panel(self)
+                Gui.Control.showDialog(self.panel)
+                self.panel_shown = True
             self.timer.start()
             self._set_status(tr('Point to an object.'))
         except Exception:
@@ -233,6 +236,9 @@ class _Session(ResettableCommand):
         if self.panel_shown:
             self.panel_shown = False
             Gui.Control.closeDialog()
+        if self.task is not None:
+            task, self.task = self.task, None
+            task.locate_finished(self)
 
     def invalidate(self):
         self.keys = []

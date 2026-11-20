@@ -1,0 +1,146 @@
+"""Export actual PDF fixtures and check the Plot contract in FreeCAD's GUI runtime."""
+
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+
+import FreeCAD as App
+import FreeCADGui as Gui
+
+
+run_dir = Path(os.environ["USTN_PLOT_TEST_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_PLOT_TEST_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(module_dir))
+
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+case = "isolated hidden GUI"
+document_name = None
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+def line(y, color):
+    obj = Draft.make_line(App.Vector(-40, y, 0), App.Vector(40, y, 0))
+    obj.ViewObject.LineColor = color
+    return obj
+
+
+def snapshot(doc, sources):
+    return levels.read_table(doc)[1], doc.UndoCount, [
+        (obj.Name, obj.ViewObject.Visibility, obj.ViewObject.Selectable, obj.ViewObject.LineColor)
+        for obj in sources
+    ]
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    assert not Gui.getMainWindow().isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4")
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    assert Path(App.ConfigGet("UserParameter")).resolve() == profile / "user.cfg"
+    assert Path(App.ConfigGet("SystemParameter")).resolve() == profile / "system.cfg"
+
+    import Draft
+    from PySide import QtCore
+    from unistation import levels, levels_gui, plot, plot_gui
+
+    assert Path(plot.__file__).resolve().is_relative_to(module_dir)
+    passed()
+
+    case = "Plot column and PDF settings"
+    doc = App.newDocument("PlotVerification")
+    document_name = doc.Name
+    doc.UndoMode = 1
+    no_plot = levels.Level("no_plot", "Non-plotting")
+    frozen = levels.Level("frozen", "Frozen")
+    display_off = levels.Level("display_off", "Display off")
+    levels.save_table(doc, (None, None), (levels.DEFAULT_LEVEL, no_plot, frozen, display_off))
+    manager = levels_gui.LevelDialog(doc, Gui.getMainWindow())
+    item = manager.table.item(1, levels_gui.PLOT)
+    assert item.flags() & QtCore.Qt.ItemIsUserCheckable
+    item.setCheckState(QtCore.Qt.Unchecked)
+    assert manager.edited_level(1) == replace(no_plot, plot=False)
+    manager.deleteLater()
+    dialog = plot_gui.PlotDialog(True, Gui.getMainWindow())
+    assert dialog.scope.currentData() == "selection"
+    assert dialog.settings() == plot.PlotSettings()
+    dialog.fit.setChecked(False)
+    dialog.scale.setValue(2.0)
+    assert dialog.scale.isEnabled() and dialog.settings().denominator == 2.0
+    dialog.deleteLater()
+    passed()
+
+    case = "Export all and filtered geometry without editing the document"
+    anchors = [line(y, (0.0, 0.0, 0.0)) for y in (-32, 32)]
+    red = line(0, (1.0, 0.0, 0.0))
+    green = line(12, (0.0, 1.0, 0.0))
+    blue = line(-12, (0.0, 0.0, 1.0))
+    sources = [*anchors, red, green, blue]
+    doc.recompute()
+    for obj, record in ((red, no_plot), (green, frozen), (blue, display_off)):
+        levels.assign_elements(doc, levels.read_table(doc), [obj], record.identifier)
+    fixed = plot.PlotSettings(denominator=1.0)
+    assert plot.export_pdf(doc, run_dir / "plot-all.pdf", fixed) == 5
+    levels.save_table(doc, levels.read_table(doc), (
+        levels.DEFAULT_LEVEL, replace(no_plot, plot=False),
+        replace(frozen, global_freeze=True), replace(display_off, global_display=False),
+    ))
+    assert red.ViewObject.Visibility and not green.ViewObject.Visibility and not blue.ViewObject.Visibility
+    before = snapshot(doc, sources)
+    assert plot.export_pdf(doc, run_dir / "plot-filtered.pdf", fixed) == 3
+    assert snapshot(doc, sources) == before
+    chosen = plot.PlotSettings(paper="A3", landscape=False, denominator=2.0)
+    assert plot.export_pdf(doc, run_dir / "plot-selected.pdf", chosen, [blue, blue, red]) == 1
+    assert snapshot(doc, sources) == before
+    passed()
+
+    case = "Failed exports preserve the destination and produce no empty PDF"
+    old_pdf = run_dir / "plot-filtered.pdf"
+    previous = old_pdf.read_bytes()
+    for path, settings, objects in (
+        (old_pdf, replace(fixed, denominator=0.01), anchors),
+        (run_dir / "empty.pdf", fixed, [red, green]),
+        (run_dir / "margins.pdf", replace(fixed, margin_mm=150), anchors),
+    ):
+        try:
+            plot.export_pdf(doc, path, settings, objects)
+        except plot.PlotError:
+            pass
+        else:
+            raise AssertionError(f"Expected PlotError for {path.name}")
+    assert old_pdf.read_bytes() == previous
+    assert not (run_dir / "empty.pdf").exists()
+    assert not (run_dir / "margins.pdf").exists()
+    assert not list(run_dir.glob(".ustn-plot-*"))
+    passed()
+
+    case = "Wire, circle and arc can be plotted in Fit mode"
+    wire = Draft.make_wire([App.Vector(-20, -10, 0), App.Vector(-25, 10, 0),
+                            App.Vector(-35, 3, 0)], closed=True, face=False)
+    circle = Draft.make_circle(8, App.Placement(App.Vector(0, 0, 0), App.Rotation()), face=False)
+    arc = Draft.make_circle(8, App.Placement(App.Vector(24, 0, 0), App.Rotation()),
+                            face=False, startangle=15, endangle=135)
+    doc.recompute()
+    assert plot.export_pdf(doc, run_dir / "plot-curves.pdf", objects=[wire, circle, arc]) == 3
+    assert not Gui.getMainWindow().isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    if document_name is not None and document_name in App.listDocuments():
+        App.closeDocument(document_name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation Plot: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)

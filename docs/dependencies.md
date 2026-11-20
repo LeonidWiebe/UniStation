@@ -1,7 +1,6 @@
 # Dependencies and compatibility / Зависимости
 
-UniStation has been tested with **FreeCAD 1.1.1**. The earlier reference runtime
-is 1.1.4. The manifest declares 1.1.1–1.1.4 and Python 3.11; this is not a full
+Earlier UniStation functionality was tested with **FreeCAD 1.1.1**. Recent alpha.4 feature checks used 1.1.4; a complete alpha.4 run in 1.1.1 has not been performed. The manifest declares 1.1.1–1.1.4 and Python 3.11; this is not a full
 test of every intermediate version, library combination or lifecycle scenario.
 The new Windows installer's runtime check remains pending.
 

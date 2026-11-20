@@ -1,0 +1,236 @@
+"""Layer Lock and direct editing regressions in a hidden FreeCAD GUI."""
+
+from contextlib import contextmanager
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from types import SimpleNamespace
+
+import FreeCAD as App
+import FreeCADGui as Gui
+
+
+run_dir = Path(os.environ["USTN_LEVEL_LOCK_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_LEVEL_LOCK_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(module_dir))
+
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+case = "isolated hidden GUI"
+doc = None
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+@contextmanager
+def rejects(error, level):
+    before = ([obj.Name for obj in doc.Objects], doc.UndoCount)
+    try:
+        yield
+    except error as exc:
+        assert level.name in str(exc), str(exc)
+    else:
+        raise AssertionError("The operation was allowed")
+    assert ([obj.Name for obj in doc.Objects], doc.UndoCount) == before
+
+
+def edit_level(level):
+    baseline = levels.read_table(doc)
+    records = tuple(level if record.identifier == level.identifier else record for record in baseline[1])
+    levels.save_table(doc, baseline, records)
+
+
+def line(y):
+    return Draft.make_line(App.Vector(0, y, 0), App.Vector(20, y, 0))
+
+
+def assign(objects, level):
+    levels.assign_elements(doc, levels.read_table(doc), objects, level.identifier)
+
+
+def transform(objects, copy=False):
+    backend = SimpleNamespace(doc=doc, objects=objects, alive=lambda: True)
+    TransformBackend.transform(backend, App.Vector(0, 40, 0), copy)
+
+
+def snapshot(obj):
+    return (
+        App.Placement(obj.Placement), levels.element_level_id(obj),
+        attributes.element_level_sources(obj), palette._color_mode(obj), palette.displayed_rgb(obj),
+        obj.ViewObject.DrawStyle, obj.ViewObject.LineWidth,
+        obj.ViewObject.Visibility, obj.ViewObject.Selectable,
+    )
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    assert not Gui.getMainWindow().isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4"), App.Version()
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    for key, filename in (("UserParameter", "user.cfg"), ("SystemParameter", "system.cfg")):
+        assert Path(App.ConfigGet(key)).resolve() == profile / filename, key
+
+    import Draft
+    from PySide import QtCore
+    from unistation import attributes, levels, levels_gui, line_weights, palette, plot
+    from unistation.gui import Backend, start
+    from unistation.transform_gui import TransformBackend, selected_objects
+
+    assert Path(levels.__file__).resolve().is_relative_to(module_dir)
+    passed()
+
+    case = "Lock checkbox, Undo and Redo leave visibility and selection intact"
+    doc = App.newDocument("LevelLockVerification")
+    doc.UndoMode = 1
+    default = levels.DEFAULT_LEVEL
+    contour = levels.Level("contour", "Contour", color_index=4, line_style=1, weight_index=2)
+    axes = levels.Level("axes", "Axes", color_index=6, line_style=2, weight_index=3)
+    details = levels.Level("details", "Details")
+    legacy, editable = line(0), line(10)
+    levels.save_table(doc, (None, None), (default, contour, axes, details))
+    assign([editable], details)
+    palette.assign_index(doc, [legacy, editable], 7)
+    attributes.set_active_level(doc, contour.identifier)
+    attributes.set_active_color(doc, attributes.BY_LEVEL)
+    attributes.set_active_line_style(doc, attributes.BY_LEVEL)
+    attributes.set_active_line_weight(doc, attributes.BY_LEVEL)
+    backend = SimpleNamespace(doc=doc, alive=lambda: True, refresh_active_attributes=lambda: None)
+    backend.active_color_index, backend.active_line_style, backend.active_line_weight = (
+        attributes.drawing_snapshot(doc)
+    )
+    Backend.create_geometry(backend, "Create line on Contour", lambda: line(20))
+    source, = [obj for obj in doc.Objects if levels.element_level_id(obj) == contour.identifier]
+    Gui.Selection.clearSelection(doc.Name)
+    Gui.Selection.addSelection(doc.Name, source.Name)
+    manager = levels_gui.LevelDialog(doc, Gui.getMainWindow())
+    item = manager.table.item(1, levels_gui.LOCK)
+    assert item.flags() & QtCore.Qt.ItemIsUserCheckable
+    item.setCheckState(QtCore.Qt.Checked)
+    locked = replace(contour, locked=True)
+    assert manager.edited_level(1) == locked
+    manager.accept()
+    assert levels.read_table(doc)[1][1] == locked
+    assert source.ViewObject.Visibility and source.ViewObject.Selectable
+    assert selected_objects() == [source]
+    doc.undo()
+    assert levels.read_table(doc)[1][1] == contour
+    doc.redo()
+    assert levels.read_table(doc)[1][1] == locked
+    manager.deleteLater()
+    passed()
+
+    case = "Locked placement and mixed Move fail before writes"
+    for kind in ("line", "wire", "circle", "arc"):
+        with rejects(levels.LevelLockedError, locked):
+            start(kind)
+    with rejects(levels.LevelLockedError, locked):
+        Backend.create_geometry(backend, "Blocked placement", lambda: line(30))
+    Gui.Selection.clearSelection(doc.Name)
+    Gui.Selection.addSelection(doc.Name, source.Name)
+    with rejects(levels.LevelLockedError, locked):
+        start("move")
+    before = [snapshot(obj) for obj in (editable, source)]
+    with rejects(levels.LevelLockedError, locked):
+        transform([editable, source])
+    assert [snapshot(obj) for obj in (editable, source)] == before
+    passed()
+
+    case = "Assignment and indexed or RGB color changes reject locked members"
+    with rejects(levels.LevelLockedError, locked):
+        assign([editable], contour)
+    with rejects(levels.LevelLockedError, locked):
+        assign([editable, source], axes)
+    with rejects(palette.PaletteError, locked):
+        palette.assign_index(doc, [editable, source], 8)
+    with rejects(palette.PaletteError, locked):
+        palette.release_rgb(doc, [editable, source])
+    assert [snapshot(obj) for obj in (editable, source)] == before
+    assert palette._require_index(editable) == 7
+    assert palette._require_index(source) == contour.color_index
+    passed()
+
+    case = "Copy validates destination and updates inherited appearance on the copy only"
+    with rejects(levels.LevelLockedError, locked):
+        start("copy")
+    with rejects(levels.LevelLockedError, locked):
+        transform([editable, source], copy=True)
+    attributes.set_active_level(doc, axes.identifier)
+    edit_level(replace(axes, global_freeze=True))
+    with rejects(levels.LevelUnavailableError, axes):
+        transform([source], copy=True)
+    edit_level(axes)
+    off = replace(locked, global_display=False)
+    edit_level(off)
+    assert not source.ViewObject.Visibility
+    original = snapshot(source)
+    existing = {obj.Name for obj in doc.Objects}
+    transform([editable, source], copy=True)
+    copies = {levels.element_level_id(obj): obj for obj in doc.Objects if obj.Name not in existing}
+    assert copies.keys() == {axes.identifier, details.identifier}
+    copied = copies[axes.identifier]
+    assert copied.ViewObject.Visibility and copied.ViewObject.Selectable
+    assert palette._require_index(copied) == axes.color_index
+    assert copied.ViewObject.DrawStyle == attributes.LINE_STYLES[axes.line_style]
+    assert getattr(copied, line_weights.INDEX) == axes.weight_index
+    assert attributes.element_level_sources(copied) == attributes.ALL_SOURCES
+    assert copied.Placement.Base == source.Placement.Base + App.Vector(0, 40, 0)
+    assert snapshot(source) == original
+    assert palette._require_index(copies[details.identifier]) == 7
+    edit_level(locked)
+    passed()
+
+    case = "Implicit Default obeys Lock and locked visible elements still plot"
+    locked_default = replace(default, locked=True)
+    edit_level(locked_default)
+    assert levels.element_level_id(legacy) is None
+    with rejects(levels.LevelLockedError, locked_default):
+        transform([legacy])
+    with rejects(levels.LevelLockedError, locked_default):
+        assign([legacy], axes)
+    with rejects(palette.PaletteError, locked_default):
+        palette.assign_index(doc, [legacy], 8)
+    assert legacy.ViewObject.Visibility and legacy.ViewObject.Selectable
+    assert plot.export_pdf(doc, run_dir / "locked.pdf", objects=[legacy, source]) == 2
+    passed()
+
+    case = "FCStd reopens locked; unlock restores editing"
+    names = (source.Name, legacy.Name)
+    path = run_dir / "level-lock.FCStd"
+    doc.saveAs(str(path))
+    App.closeDocument(doc.Name)
+    doc = None
+    doc = App.openDocument(str(path))
+    source, legacy = [doc.getObject(name) for name in names]
+    assert levels.read_table(doc)[1][:2] == (locked_default, locked)
+    with rejects(levels.LevelLockedError, locked):
+        transform([source])
+    with rejects(levels.LevelLockedError, locked_default):
+        transform([legacy])
+    edit_level(contour)
+    original = App.Vector(source.Placement.Base)
+    transform([source])
+    assert source.Placement.Base == original + App.Vector(0, 40, 0)
+    palette.release_rgb(doc, [source])
+    assign([source], axes)
+    assert levels.element_level_id(source) == axes.identifier
+    assert not Gui.getMainWindow().isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    if doc is not None:
+        App.closeDocument(doc.Name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation level lock: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)

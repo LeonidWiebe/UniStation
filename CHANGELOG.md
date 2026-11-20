@@ -1,5 +1,16 @@
 # Changes
 
+## v0.1.0-alpha.4 — 2026-11-20
+
+- Packaged current UniStation sources: FCStd layers, ByLayer, modeless manager,
+  visibility/freeze/Lock/Plot, Change Attributes, Edit Palette Load/Save and PDF.
+- Five toolbars and current Russian/English catalogs.
+- Build now takes UniStation from the checkout; AxisFlow remains hash-pinned
+  and byte-identical to the accepted earlier package, with full sources/licenses.
+- Unit run: 58/67 passed, 5 failures and 4 errors in legacy Circle/Arc tests.
+- Installer/uninstaller execution and failure recovery remain unvalidated.
+
+
 ## Documentation refresh — 2026-11-09
 
 - Refreshed current status, installer/source installation, dependencies and author voice.

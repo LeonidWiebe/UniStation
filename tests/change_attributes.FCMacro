@@ -1,0 +1,278 @@
+"""Selected and located element attribute edits in an isolated FreeCAD GUI."""
+
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from unittest.mock import patch
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtWidgets
+
+
+run_dir = Path(os.environ["USTN_CHANGE_ATTRIBUTES_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_CHANGE_ATTRIBUTES_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+documents = set()
+case = "isolated hidden workbench"
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+def line(y):
+    return Draft.make_line(App.Vector(0, y, 0), App.Vector(20, y, 0))
+
+
+def edit_level(document, updated):
+    baseline = levels.read_table(document)
+    records = tuple(updated if level.identifier == updated.identifier else level for level in baseline[1])
+    levels.save_table(document, baseline, records)
+
+
+def snapshot(obj):
+    return (
+        levels.element_level_id(obj), attributes.element_level_sources(obj),
+        palette._color_mode(obj), getattr(obj, palette.INDEX_PROPERTY, None), palette.displayed_rgb(obj),
+        obj.ViewObject.DrawStyle, getattr(obj, line_weights.INDEX, None), obj.ViewObject.LineWidth,
+        obj.ViewObject.Visibility, obj.ViewObject.Selectable,
+    )
+
+
+def select(document, *objects):
+    Gui.Selection.clearSelection(document.Name)
+    for obj in objects:
+        Gui.Selection.addSelection(document.Name, obj.Name)
+    Gui.updateGui()
+
+
+def current_task():
+    task = gui.active_session()
+    assert task is not None and Gui.Control.activeDialog()
+    assert not task.form.isWindow() and window.isAncestorOf(task.form)
+    assert task.form.windowTitle() == tr('UniStation Change Attributes')
+    assert QtWidgets.QApplication.activeModalWidget() is None
+    assert len(task.checks) == 4
+    assert all(not checkbox.isChecked() for checkbox in task.checks.values())
+    assert not task.confirm.isEnabled()
+    assert task.reset_button.objectName() == "unistation_reset"
+    for name in ("color", "style", "weight"):
+        assert task.pickers[name].menu() is not None
+    return task
+
+
+def choose_color(task):
+    task.values.update(color=6, style="Dashdot", weight=8)
+    task.checks["color"].setChecked(True)
+    assert task.confirm.isEnabled()
+    assert task.patch() == AttributePatch(color=6)
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    window = Gui.getMainWindow()
+    assert not window.isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4")
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    for key, filename in (("UserParameter", "user.cfg"), ("SystemParameter", "system.cfg")):
+        assert Path(App.ConfigGet(key)).resolve() == profile / filename, key
+
+    doc = App.newDocument("ChangeAttributesVerification")
+    documents.add(doc.Name)
+    doc.UndoMode = 1
+    Gui.activateWorkbench("DraftWorkbench")
+    assert Gui.activateWorkbench("UniStationWorkbench")
+    Gui.updateGui()
+    import Draft
+    from unistation import attributes, change_attributes_gui as gui, element_attributes, levels, line_weights, palette
+    from unistation.element_attributes import AttributePatch, KEEP_RGB
+    from unistation.gui import active_input, reset
+    from unistation.i18n import tr
+
+    assert Path(gui.__file__).resolve().is_relative_to(module_dir)
+    action, = Gui.Command.get(gui.COMMAND).getAction()
+    edit_action, = Gui.Command.get("UniStation_EditPalette").getAction()
+    toolbars = window.findChildren(QtWidgets.QToolBar)
+    for moved_action, expected_toolbar in ((action, "Атрибуты"), (edit_action, "UniStation")):
+        toolbar, = [item for item in toolbars if moved_action in item.actions()]
+        assert toolbar.objectName() == expected_toolbar
+        assert toolbar.actions()[-1] == moved_action
+        assert not moved_action.icon().pixmap(24, 24).isNull()
+    passed()
+
+    case = "Change Attributes edits only the checked field on all selected objects"
+    first, second = line(0), line(5)
+    base = levels.DEFAULT_LEVEL
+    source = levels.Level("source", "Contours", color_index=3, line_style=1, weight_index=2)
+    target = levels.Level("target", "Axes", color_index=2, line_style=2, weight_index=5)
+    levels.save_table(doc, (None, None), (base, source, target))
+    inherited = attributes.BY_LEVEL
+    doc.recompute()
+    element_attributes.apply(doc, [first, second], AttributePatch(source.identifier, inherited, inherited, inherited))
+    before = [snapshot(obj) for obj in (first, second)]
+    select(doc, first, second)
+    undo = doc.UndoCount
+    action.trigger()
+    task = current_task()
+    assert active_input() is task
+    choose_color(task)
+    task.confirm.click()
+    assert task.closed and not Gui.Control.activeDialog()
+    after = [snapshot(obj) for obj in (first, second)]
+    assert doc.UndoCount == undo + 1
+    for old, new in zip(before, after):
+        assert new[0] == old[0]
+        assert new[1] == attributes.STYLE_SOURCE | attributes.WEIGHT_SOURCE
+        assert new[3] == 6
+        assert new[5:] == old[5:]
+    doc.undo()
+    assert [snapshot(obj) for obj in (first, second)] == before
+    doc.redo()
+    assert [snapshot(obj) for obj in (first, second)] == after
+    passed()
+
+    case = "changing layer resolves By Level against the destination and preserves own attributes"
+    element_attributes.apply(doc, [first, second], AttributePatch(level=target.identifier, style=inherited))
+    for obj in (first, second):
+        assert levels.element_level_id(obj) == target.identifier
+        assert palette._require_index(obj) == 6
+        assert obj.ViewObject.DrawStyle == "Dotted"
+        assert getattr(obj, line_weights.INDEX) == 5
+    element_attributes.apply(doc, [first], AttributePatch(color=inherited, style="Solid", weight=1))
+    assert palette._require_index(first) == target.color_index
+    assert attributes.element_level_sources(first) == attributes.COLOR_SOURCE
+    assert first.ViewObject.DrawStyle == "Solid" and getattr(first, line_weights.INDEX) == 1
+    rgb = palette.displayed_rgb(first)
+    element_attributes.apply(doc, [first], AttributePatch(color=KEEP_RGB))
+    assert palette._color_mode(first) == palette.MODE_DIRECT
+    assert palette.displayed_rgb(first) == rgb
+    assert not attributes.element_level_sources(first)
+    passed()
+
+    case = "Locate retains the same native task form through target acceptance"
+    select(doc)
+    gui_document = Gui.getDocument(doc.Name)
+    if gui_document.activeView() is None:
+        gui_document.createView("Gui::View3DInventor")
+    App.setActiveDocument(doc.Name)
+    Gui.updateGui()
+    view = Gui.activeDocument().activeView()
+    assert view is not None and not window.isVisible()
+    view.setNavigationType("Gui::CADNavigationStyle")
+    Gui.runCommand(gui.COMMAND)
+    task = current_task()
+    form = task.form
+    choose_color(task)
+    task.confirm.click()
+    locator = task.locator
+    assert locator is not None, task.notice.text()
+    assert active_input() is locator and Gui.Control.activeDialog()
+    assert task.form is form and window.isAncestorOf(form)
+    assert not task.fields.isEnabled() and task.reset_button.isEnabled()
+    assert locator.predicate(first) is None
+    locator.armed = True
+    with (
+        patch.object(locator, "_replace_keys", return_value=[first.Name]),
+        patch.object(locator, "_object", return_value=first),
+    ):
+        locator.try_accept()
+    assert locator.closed and task.closed and not Gui.Control.activeDialog()
+    assert palette._require_index(first) == 6
+    assert palette._require_index(second) == 6 and getattr(first, line_weights.INDEX) == 1
+    passed()
+
+    case = "task Reset, logical Reset and native Close discard pending changes"
+    select(doc)
+    before = snapshot(first)
+    Gui.runCommand(gui.COMMAND)
+    task = current_task()
+    choose_color(task)
+    task.reset_button.click()
+    assert current_task() is task and task.values == task.initial_values
+    reset(source="test")
+    assert task.closed and active_input() is None and not Gui.Control.activeDialog()
+    Gui.runCommand(gui.COMMAND)
+    task = current_task()
+    choose_color(task)
+    task.confirm.click()
+    locator = task.locator
+    assert locator is not None
+    Gui.Control.closeDialog()
+    Gui.updateGui()
+    assert task.closed and locator.closed and active_input() is None
+    assert snapshot(first) == before
+    passed()
+
+    case = "locked sources and destinations reject the complete patch"
+    editable = line(10)
+    doc.recompute()
+    edit_level(doc, replace(target, locked=True))
+    before = [snapshot(obj) for obj in (editable, first)]
+    undo = doc.UndoCount
+    for objects, attributes_patch in (
+            ([editable, first], AttributePatch(color=1)),
+            ([editable], AttributePatch(level=target.identifier, weight=6))):
+        try:
+            element_attributes.apply(doc, objects, attributes_patch)
+        except levels.LevelLockedError:
+            pass
+        else:
+            raise AssertionError("Locked layer accepted the edit")
+        assert [snapshot(obj) for obj in (editable, first)] == before
+        assert doc.UndoCount == undo
+    saved = run_dir / "changed-attributes.FCStd"
+    name = first.Name
+    doc.saveAs(str(saved))
+    App.closeDocument(doc.Name)
+    doc = App.openDocument(str(saved))
+    documents.add(doc.Name)
+    assert snapshot(doc.getObject(name)) == before[1]
+    passed()
+
+    case = "a mid-apply failure rolls back both objects and new tables with Undo disabled"
+    scratch = App.newDocument("ChangeAttributesRollback")
+    documents.add(scratch.Name)
+    scratch.UndoMode = 0
+    left, right = line(0), line(5)
+    scratch.recompute()
+    before = [snapshot(obj) for obj in (left, right)]
+    names = [obj.Name for obj in scratch.Objects]
+    set_weight = line_weights.set_element_index
+
+    def fail_second(obj, index, widths):
+        if obj is right:
+            raise RuntimeError("injected weight failure")
+        set_weight(obj, index, widths)
+
+    with patch.object(line_weights, "set_element_index", fail_second):
+        try:
+            element_attributes.apply(scratch, [left, right], AttributePatch(color=3, style="Dashed", weight=1))
+        except RuntimeError as exc:
+            assert str(exc) == "injected weight failure"
+        else:
+            raise AssertionError("Expected rollback")
+    assert [snapshot(obj) for obj in (left, right)] == before
+    assert [obj.Name for obj in scratch.Objects] == names
+    assert not window.isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    if "gui" in globals():
+        gui.cancel()
+    for name in documents.intersection(App.listDocuments()):
+        App.closeDocument(name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation Change Attributes: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)

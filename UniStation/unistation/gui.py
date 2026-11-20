@@ -20,11 +20,12 @@ _LINE_PATTERNS = {"Solid": 0xffff, "Dashed": 0xf00f,
 
 
 def active_input():
-    """Return the live UniStation point/transform or element-locate session."""
+    """Return the live UniStation command that receives logical input."""
     if _session is not None and not _session.closed:
         return _session
-    from unistation.locate import active_session
-    return active_session()
+    from unistation.locate import active_session as active_locate
+    from unistation.change_attributes_gui import active_session as active_change_attributes
+    return active_locate() or active_change_attributes()
 
 
 def drawing_session():
@@ -51,6 +52,8 @@ def reset(expected=None, source="command"):
 def cancel():
     """Unconditional teardown for Close, explicit Cancel and lifecycle guards."""
     from unistation.locate import cancel as cancel_locate
+    from unistation.change_attributes_gui import cancel as cancel_change_attributes
+    cancel_change_attributes()
     cancel_locate()
     if _session is not None:
         _session.cancel()
@@ -184,6 +187,10 @@ class Backend:
             raise RuntimeError(tr('The original document/view is no longer active'))
         # Read again before commit even if a queued toolbar refresh has not run.
         self.refresh_active_attributes()
+        from unistation.attributes import active_level_sources, placement_level_id, set_element_level_sources
+        from unistation.levels import set_element_level
+        level_id = placement_level_id(self.doc)
+        sources = active_level_sources(self.doc)
         self.doc.openTransaction(title)
         try:
             obj = factory()
@@ -201,6 +208,9 @@ class Backend:
             if self.active_line_weight is not None:
                 from unistation.line_weights import apply_in_transaction
                 apply_in_transaction(self.doc, obj, self.active_line_weight)
+            if level_id is not None:
+                set_element_level(obj, level_id)
+            set_element_level_sources(obj, sources)
             self.doc.commitTransaction()
         except Exception:
             self.doc.abortTransaction()
@@ -341,8 +351,14 @@ def start(kind="line"):
     active_index = None
     active_style = None
     active_weight = None
-    if kind in ("line", "wire", "circle", "arc"):
-        from unistation.attributes import drawing_snapshot
+    is_transform = kind in ("move", "copy")
+    if is_transform:
+        from unistation.transform_gui import selected_objects, transform_levels, TransformBackend
+        objects = selected_objects()
+        transform_levels(App.ActiveDocument, objects, copy=kind == "copy")
+    else:
+        from unistation.attributes import drawing_snapshot, placement_level_id
+        placement_level_id(App.ActiveDocument)
         active_index, active_style, active_weight = drawing_snapshot(App.ActiveDocument)
     import AxisFlow
     required = ("getPoint", "endSession", "setPlane", "isActive")
@@ -358,9 +374,8 @@ def start(kind="line"):
     import WorkingPlane
     wp = WorkingPlane.get_working_plane()
     AxisFlow.setPlane(wp.u, wp.v, wp.axis)
-    if kind in ("move", "copy"):
-        from unistation.transform_gui import selected_objects, TransformBackend
-        backend = TransformBackend(AxisFlow, selected_objects())
+    if is_transform:
+        backend = TransformBackend(AxisFlow, objects)
     else:
         backend = Backend(AxisFlow, active_color_index=active_index,
                           active_line_style=active_style, active_line_weight=active_weight)
@@ -368,7 +383,7 @@ def start(kind="line"):
                     "circle": CircleSession, "arc": ArcSession,
                     "move": TransformSession, "copy": TransformSession}[kind]
     options = {}
-    if kind in ("move", "copy"):
+    if is_transform:
         options["copy"] = kind == "copy"
     if kind in ("circle", "arc"):
         backend.circle_rotation = App.Rotation(wp.u, wp.v, wp.axis, "ZXY")
@@ -384,6 +399,18 @@ def start(kind="line"):
         raise
 
 
+def _activate_input(kind):
+    from unistation.levels import LevelUnavailableError
+
+    try:
+        start(kind)
+    except LevelUnavailableError as exc:
+        Gui.getMainWindow().statusBar().showMessage(str(exc), 8000)
+        App.Console.PrintWarning("UniStation: " + str(exc) + "\n")
+    except Exception as exc:
+        App.Console.PrintError("UniStation: " + str(exc) + "\n")
+
+
 class LineCommand:
     def GetResources(self):
         return {"Pixmap": str(_ICON_DIR / "line.svg"),
@@ -394,10 +421,7 @@ class LineCommand:
         return App.ActiveDocument is not None
 
     def Activated(self):
-        try:
-            start()
-        except Exception as exc:
-            App.Console.PrintError("UniStation: " + str(exc) + "\n")
+        _activate_input("line")
 
 
 class WireCommand(LineCommand):
@@ -407,10 +431,7 @@ class WireCommand(LineCommand):
                 "ToolTip": QT_TRANSLATE_NOOP('UniStation_Wire', 'Create an open or closed Draft polyline using AxisFlow')}
 
     def Activated(self):
-        try:
-            start("wire")
-        except Exception as exc:
-            App.Console.PrintError("UniStation: " + str(exc) + "\n")
+        _activate_input("wire")
 
 
 class CircleCommand(LineCommand):
@@ -420,10 +441,7 @@ class CircleCommand(LineCommand):
                 "ToolTip": QT_TRANSLATE_NOOP('UniStation_Circle', 'Create a Draft circle from center and radius point using AxisFlow')}
 
     def Activated(self):
-        try:
-            start("circle")
-        except Exception as exc:
-            App.Console.PrintError("UniStation: " + str(exc) + "\n")
+        _activate_input("circle")
 
 
 class ArcCommand(LineCommand):
@@ -433,10 +451,7 @@ class ArcCommand(LineCommand):
                 "ToolTip": QT_TRANSLATE_NOOP('UniStation_Arc', 'Create a Draft arc through start, through-point and end using AxisFlow')}
 
     def Activated(self):
-        try:
-            start("arc")
-        except Exception as exc:
-            App.Console.PrintError("UniStation: " + str(exc) + "\n")
+        _activate_input("arc")
 
 
 class TransformCommand(LineCommand):
@@ -455,10 +470,7 @@ class TransformCommand(LineCommand):
                 "ToolTip": tip}
 
     def Activated(self):
-        try:
-            start(self.kind)
-        except Exception as exc:
-            App.Console.PrintError("UniStation: " + str(exc) + "\n")
+        _activate_input(self.kind)
 
 
 class PendingCommand:
@@ -484,7 +496,7 @@ class PendingCommand:
 class CancelCommand:
     def GetResources(self):
         return {"CmdType": "ForEdit NoTransaction",
-                "MenuText": QT_TRANSLATE_NOOP('UniStation_Cancel', 'Cancel UniStation'),
+                "MenuText": QT_TRANSLATE_NOOP('UniStation_Cancel', 'Cancel Command'),
                 "ToolTip": QT_TRANSLATE_NOOP('UniStation_Cancel', 'Cancel the current UniStation input')}
 
     def IsActive(self):

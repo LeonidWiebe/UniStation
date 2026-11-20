@@ -2,7 +2,7 @@
 
 ## Windows installer — recommended
 
-Download the [alpha.3 setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe)
+Download the [alpha.4 setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.4/UniStation-0.1.0-alpha.4-win64-setup.exe)
 and close FreeCAD. Choose language, components and the parent **Mod** directory.
 Default: `%APPDATA%\FreeCAD\v1-1\Mod`. Setup creates UniStation/AxisFlow inside it.
 Start FreeCAD normally, select UniStation, then create/open a document.
@@ -11,7 +11,7 @@ FreeCAD is external; no PowerShell command or separate candidate profile is need
 The setup/uninstall/restore workflow still requires runtime validation.
 It is a prerelease and the executable is unsigned. Read the
 [installer guide](../packaging/installer/USER-GUIDE.md),
-[release notes](release-v0.1.0-alpha.3.md) and [dependencies](dependencies.md).
+[release notes](release-v0.1.0-alpha.4.md) and [dependencies](dependencies.md).
 For a custom/portable profile, choose its actual Mod directory. Setup does not
 auto-detect FreeCAD.exe or establish arbitrary binary ABI compatibility.
 

@@ -5,6 +5,11 @@ import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore
 from unistation.gui import Backend
+from unistation.level_visibility import copy_view_state, is_frozen, prepare_view_change
+
+
+def _frozen_level_error(obj):
+    return tr('The level of {} is frozen. Thaw the level to select its elements.').format(obj.Label)
 
 
 def whole_object_error(obj):
@@ -12,6 +17,8 @@ def whole_object_error(obj):
     from draftutils.utils import get_type
     if obj.Document is not App.ActiveDocument:
         return tr('Select objects from the active document only')
+    if is_frozen(obj):
+        return _frozen_level_error(obj)
     if (not hasattr(obj, "Shape") or not hasattr(obj, "Placement")
             or (get_type(obj) not in ("Wire", "Circle") and obj.TypeId != "Part::Feature")):
         return tr('Supported: independent Draft wires/circles/arcs and simple Part features')
@@ -23,10 +30,10 @@ def whole_object_error(obj):
     return None
 
 
-def selected_objects():
+def selected_objects(empty_message=None):
     selection = Gui.Selection.getSelectionEx()
     if not selection:
-        raise RuntimeError(tr('Select whole objects before starting Move or Copy'))
+        raise RuntimeError(empty_message or tr('Select whole objects before starting Move or Copy'))
     objects = []
     for item in selection:
         if item.SubElementNames:
@@ -37,6 +44,23 @@ def selected_objects():
         if item.Object not in objects:
             objects.append(item.Object)
     return objects
+
+
+def transform_levels(document, objects, copy):
+    """Check a Move, or return a new destination for each locked Copy source."""
+    from unistation.attributes import placement_level_id
+    from unistation.levels import available_levels, level_for_element, require_editable_elements
+
+    by_id = {level.identifier: level for level in available_levels(document)}
+    if not copy:
+        require_editable_elements(objects, by_id)
+        return ()
+    if not any(level.locked for level in by_id.values()):
+        return (None,) * len(objects)
+    sources = [level_for_element(obj, by_id) for obj in objects]
+    locked = [level is not None and level.locked for level in sources]
+    destination = by_id[placement_level_id(document)] if any(locked) else None
+    return tuple(destination if redirect else None for redirect in locked)
 
 
 class TransformBackend(Backend):
@@ -102,8 +126,19 @@ class TransformBackend(Backend):
 
     def transform(self, delta, copy):
         import Draft
+        from unistation.attributes import (
+            element_level_sources, level_appearance_changes, set_element_level_sources,
+        )
+        from unistation.levels import element_level_id, set_element_level
         if not self.alive():
             raise RuntimeError(tr('The selected objects or document changed'))
+        for obj in self.objects:
+            if is_frozen(obj):
+                raise RuntimeError(_frozen_level_error(obj))
+        destinations = transform_levels(self.doc, self.objects, copy)
+        bindings = [(element_level_id(obj), element_level_sources(obj)) for obj in self.objects] if copy else ()
+        # Abort does not remove new objects when FreeCAD Undo is disabled.
+        existing = {obj.Name for obj in self.doc.Objects} if copy and not self.doc.UndoMode else None
         self.doc.openTransaction(tr('UniStation Copy') if copy else tr('UniStation Move'))
         try:
             result = Draft.move(self.objects, delta, copy=copy)
@@ -114,9 +149,30 @@ class TransformBackend(Backend):
             for obj in result:
                 if obj.Shape.isNull() or not obj.Shape.isValid():
                     raise RuntimeError(tr('Draft.move produced invalid geometry'))
+            inherited = []
+            for obj, source, (identifier, sources), destination in zip(
+                    result, self.objects, bindings, destinations):
+                if destination is not None:
+                    identifier = destination.identifier
+                if identifier:
+                    set_element_level(obj, identifier)
+                set_element_level_sources(obj, sources)
+                copy_view_state(source, obj)
+                if destination is not None:
+                    view_change = prepare_view_change(obj, available=True, frozen=False)
+                    if view_change is not None:
+                        view_change.apply()
+                    if sources:
+                        inherited.append((obj, destination, sources))
+            for change in level_appearance_changes(self.doc, inherited):
+                change.apply()
             self.doc.commitTransaction()
         except Exception:
             self.doc.abortTransaction()
+            if existing is not None:
+                for obj in reversed(self.doc.Objects):
+                    if obj.Name not in existing:
+                        self.doc.removeObject(obj.Name)
             raise
         from unistation.operation_selection import finish
         finish(self.doc, result)

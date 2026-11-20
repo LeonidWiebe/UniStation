@@ -1,0 +1,176 @@
+"""Check the modeless Level Manager, Apply, and the hover attribute text."""
+
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtCore, QtWidgets
+
+
+run_dir = Path(os.environ["USTN_LEVEL_MANAGER_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_LEVEL_MANAGER_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+documents = set()
+case = "isolated hidden workbench"
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+def modeless_dialog():
+    def show_offscreen(dialog):
+        dialog.setAttribute(QtCore.Qt.WA_DontShowOnScreen)
+        QtWidgets.QDialog.show(dialog)
+
+    with patch.object(levels_gui.LevelDialog, "show", show_offscreen):
+        Gui.runCommand(levels_gui.COMMAND)
+    Gui.updateGui()
+    return next(dialog for dialog in window.findChildren(QtWidgets.QDialog, "UstnLevelManager")
+                if dialog.isVisible() and dialog.document is App.ActiveDocument)
+
+
+def records(doc):
+    return levels.read_table(doc)[1]
+
+
+def hover(obj):
+    pick = {"Document": obj.Document.Name, "Object": obj.Name}
+    view = SimpleNamespace(getCursorPos=lambda: (0, 0), getObjectInfo=lambda _point: pick)
+    return level_ui._hover_label(view).splitlines()
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    window = Gui.getMainWindow()
+    assert not window.isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4")
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    for key, filename in (("UserParameter", "user.cfg"), ("SystemParameter", "system.cfg")):
+        assert Path(App.ConfigGet(key)).resolve() == profile / filename, key
+
+    doc = App.newDocument("ModelessLevelsVerification")
+    documents.add(doc.Name)
+    doc.UndoMode = 1
+    Gui.activateWorkbench("DraftWorkbench")
+    assert Gui.activateWorkbench("UniStationWorkbench")
+    import Draft
+    from unistation import attributes, level_ui, levels, levels_gui
+    from unistation.gui import Backend
+    from unistation.i18n import tr
+
+    assert Path(levels_gui.__file__).resolve().is_relative_to(module_dir)
+    base = levels.DEFAULT_LEVEL
+    contour = levels.Level("contour", "Contour", color_index=4, line_style=1, weight_index=2)
+    levels.save_table(doc, (None, None), (base, contour))
+    legacy = Draft.make_line(App.Vector(), App.Vector(20, 0, 0))
+    attributes.set_active_level(doc, contour.identifier)
+    attributes.set_active_color(doc, attributes.BY_LEVEL)
+    attributes.set_active_line_style(doc, attributes.BY_LEVEL)
+    attributes.set_active_line_weight(doc, attributes.BY_LEVEL)
+    index, style, weight = attributes.drawing_snapshot(doc)
+    backend = SimpleNamespace(doc=doc, alive=lambda: True, refresh_active_attributes=lambda: None,
+                              active_color_index=index, active_line_style=style, active_line_weight=weight)
+    Backend.create_geometry(backend, "Verification line",
+                            lambda: Draft.make_line(App.Vector(0, 10, 0), App.Vector(20, 10, 0)))
+    obj, = [item for item in doc.Objects if levels.element_level_id(item) == contour.identifier]
+    legacy.ViewObject.LineColor = (1.0, 0.0, 0.0)
+    passed()
+
+    case = "manager is modeless, reuses its window, and leaves the drawing selectable"
+    dialog = modeless_dialog()
+    assert dialog.windowModality() == QtCore.Qt.NonModal
+    assert QtWidgets.QApplication.activeModalWidget() is None
+    assert modeless_dialog() is dialog
+    Gui.Selection.clearSelection(doc.Name)
+    Gui.Selection.addSelection(doc.Name, obj.Name)
+    Gui.updateGui()
+    assert Gui.Selection.getSelection() == [obj]
+    passed()
+
+    case = "repeated Apply commits settings, retains the window and supports Undo and Redo"
+    first = replace(base, description="First apply")
+    dialog.table.item(0, levels_gui.DESCRIPTION).setText(first.description)
+    dialog.apply_button.click()
+    assert records(doc) == (first, contour) and dialog.isVisible()
+    second = replace(contour, name="Outline", locked=True, plot=False)
+    dialog.table.item(1, levels_gui.NAME).setText(second.name)
+    dialog.table.item(1, levels_gui.LOCK).setCheckState(QtCore.Qt.Checked)
+    dialog.table.item(1, levels_gui.PLOT).setCheckState(QtCore.Qt.Unchecked)
+    dialog.apply_button.click()
+    assert records(doc) == (first, second) and dialog.isVisible()
+    doc.undo()
+    Gui.updateGui()
+    assert records(doc) == (first, contour) and dialog.edited_level(1) == contour
+    doc.redo()
+    Gui.updateGui()
+    assert records(doc) == (first, second) and dialog.edited_level(1) == second
+    passed()
+
+    case = "hover includes inherited appearance, direct RGB, and level flags"
+    labels = hover(obj)
+    assert labels[0] == tr('Level: {}').format(second.name)
+    assert tr('Index {}').format(second.color_index) in labels[1]
+    assert tr('Dashed') in labels[2]
+    assert str(second.weight_index) in labels[3]
+    assert all(tr('By level') in label for label in labels[1:4])
+    assert labels[4:] == [tr('Locked level'), tr('Plot disabled')]
+    assert tr('RGB {}, {}, {}').format(255, 0, 0) in hover(legacy)[1]
+    passed()
+
+    case = "a dialog only applies to its active document and closes when that document closes"
+    other = App.newDocument("OtherLevelManagerDocument")
+    documents.add(other.Name)
+    other_dialog = modeless_dialog()
+    assert other_dialog is not dialog and not dialog.apply_button.isEnabled()
+    other_dialog.table.item(0, levels_gui.DESCRIPTION).setText("Other document")
+    other_dialog.save_button.click()
+    assert not other_dialog.isVisible()
+    assert records(other)[0].description == "Other document"
+    other_dialog = modeless_dialog()
+    App.closeDocument(other.Name)
+    Gui.updateGui()
+    assert not any(item.isVisible() and item.document is other
+                   for item in window.findChildren(QtWidgets.QDialog, "UstnLevelManager"))
+    App.setActiveDocument(doc.Name)
+    Gui.updateGui()
+    assert dialog.apply_button.isEnabled()
+    passed()
+
+    case = "external edits preserve pending fields and Cancel retains applied changes"
+    draft = "Pending change"
+    dialog.table.item(0, levels_gui.DESCRIPTION).setText(draft)
+    outside = replace(second, description="External edit")
+    levels.save_table(doc, levels.read_table(doc), (first, outside))
+    Gui.updateGui()
+    assert dialog.table.item(0, levels_gui.DESCRIPTION).text() == draft
+    dialog.apply_button.click()
+    assert records(doc) == (first, outside)
+    assert dialog.isVisible() and dialog.name_error.text()
+    dialog.reject()
+    reopened = modeless_dialog()
+    assert reopened.edited_levels() == (first, outside)
+    assert not window.isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    for name in documents.intersection(App.listDocuments()):
+        App.closeDocument(name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation Level Manager: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)

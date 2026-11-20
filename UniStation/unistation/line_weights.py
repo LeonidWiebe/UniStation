@@ -123,23 +123,42 @@ def apply_in_transaction(document, obj, index):
     same_document(document)
     if obj.Document is not document or document.getObject(obj.Name) is not obj:
         raise PaletteError(tr('The new element is no longer available in the drawing document.'))
+    if INDEX in obj.PropertiesList or PREVIOUS_EDITOR_MODE in obj.PropertiesList:
+        raise PaletteError(tr('The new element already has indexed line weight data.'))
+    require_element_width(obj)
+    _table, widths = ensure_table_in_transaction(document)
+    set_element_index(obj, index, widths)
+
+
+def require_element_width(obj):
     view = getattr(obj, "ViewObject", None)
     if (view is None or "LineWidth" not in view.PropertiesList
             or view.getTypeIdOfProperty("LineWidth") != "App::PropertyFloatConstraint"):
         raise PaletteError(tr('The new element does not support screen line width.'))
-    if INDEX in obj.PropertiesList or PREVIOUS_EDITOR_MODE in obj.PropertiesList:
-        raise PaletteError(tr('The new element already has indexed line weight data.'))
-    _table, widths = ensure_table_in_transaction(document)
-    obj.addProperty("App::PropertyIntegerConstraint", INDEX, GROUP,
-                    "Индекс толщины UniStation 0..31; ширина определяется таблицей документа.")
+    names = obj.PropertiesList
+    if INDEX in names or PREVIOUS_EDITOR_MODE in names:
+        if (INDEX not in names or PREVIOUS_EDITOR_MODE not in names
+                or obj.getTypeIdOfProperty(INDEX) != "App::PropertyIntegerConstraint"
+                or obj.getTypeIdOfProperty(PREVIOUS_EDITOR_MODE) != "App::PropertyInteger"
+                or getattr(obj, PREVIOUS_EDITOR_MODE) not in range(4)):
+            raise PaletteError(tr('An element has a damaged UniStation line weight index.'))
+        require_index(getattr(obj, INDEX))
+
+
+def set_element_index(obj, index, widths):
+    """Write an index using a validated table and an existing transaction."""
+    view = obj.ViewObject
+    if INDEX not in obj.PropertiesList:
+        obj.addProperty("App::PropertyIntegerConstraint", INDEX, GROUP,
+                        "Индекс толщины UniStation 0..31; ширина определяется таблицей документа.")
+        # Preserve the native editor mask on the first indexed assignment.
+        modes = view.getEditorMode("LineWidth")
+        mask = (1 if "ReadOnly" in modes else 0) | (2 if "Hidden" in modes else 0)
+        obj.addProperty("App::PropertyInteger", PREVIOUS_EDITOR_MODE, GROUP,
+                        "Режим редактора LineWidth до индексного назначения.", 0, False, True)
+        setattr(obj, PREVIOUS_EDITOR_MODE, mask)
     setattr(obj, INDEX, (index, 0, 31, 1))
-    # Preserve the original mask for a future explicit return to native width.
-    modes = view.getEditorMode("LineWidth")
-    mask = (1 if "ReadOnly" in modes else 0) | (2 if "Hidden" in modes else 0)
-    obj.addProperty("App::PropertyInteger", PREVIOUS_EDITOR_MODE, GROUP,
-                    "Режим редактора LineWidth до индексного назначения.", 0, False, True)
-    setattr(obj, PREVIOUS_EDITOR_MODE, mask)
     obj.setEditorMode(INDEX, 1)
     obj.setEditorMode(PREVIOUS_EDITOR_MODE, 3)
     view.LineWidth = widths[index]
-    view.setEditorMode("LineWidth", mask | 1)
+    view.setEditorMode("LineWidth", getattr(obj, PREVIOUS_EDITOR_MODE) | 1)

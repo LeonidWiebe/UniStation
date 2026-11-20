@@ -3,6 +3,7 @@
 from unistation.i18n import (QT_TRANSLATE_NOOP, bind, tr, translated_dialog_button, translated_label)
 
 import sys
+from pathlib import Path
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -10,13 +11,10 @@ from PySide import QtCore, QtGui, QtWidgets
 
 from unistation.palette import (
     PaletteError,
-    assign_index,
-    color_drift,
     colors_for_display,
     classify_palettes,
     indexed_objects,
     load_palette_file,
-    release_rgb,
     replace_palette,
     same_document,
     write_palette_file,
@@ -24,29 +22,15 @@ from unistation.palette import (
 
 
 def register():
-    Gui.addCommand("UniStation_IndexedColor", IndexedColorCommand())
     Gui.addCommand("UniStation_EditPalette", EditPaletteCommand())
     Gui.addCommand("UniStation_ImportPalette", ImportPaletteCommand())
     Gui.addCommand("UniStation_ExportPalette", ExportPaletteCommand())
 
 
-class IndexedColorCommand:
-    def GetResources(self):
-        return {
-            "MenuText": QT_TRANSLATE_NOOP('UniStation_IndexedColor', 'Indexed color'),
-            "ToolTip": QT_TRANSLATE_NOOP('UniStation_IndexedColor', 'Assign a palette index to selected objects or locate one object with the cursor'),
-        }
-
-    def IsActive(self):
-        return App.ActiveDocument is not None
-
-    def Activated(self):
-        _run(_indexed_color)
-
-
 class EditPaletteCommand:
     def GetResources(self):
         return {
+            "Pixmap": str(Path(__file__).resolve().parent / "icons" / "edit-palette.svg"),
             "MenuText": QT_TRANSLATE_NOOP('UniStation_EditPalette', 'Edit palette'),
             "ToolTip": QT_TRANSLATE_NOOP('UniStation_EditPalette', 'Open the document palette and double-click to edit a color'),
         }
@@ -101,62 +85,22 @@ def _run(action):
         _critical(tr('The palette command failed. The document should contain no partial changes.'))
 
 
-def _indexed_color(document):
-    if Gui.Selection.getSelectionEx(document.Name):
-        _open_indexed_color(document, _targets())
-        return
-    from unistation.locate import LocateError, begin
-    from unistation.transform_gui import whole_object_error
-
-    def accept(objects):
-        try:
-            _open_indexed_color(document, objects)
-        except PaletteError as exc:
-            _warn(str(exc))
-        except Exception as exc:
-            App.Console.PrintError("UniStation: " + str(exc) + "\n")
-            _critical(tr('The palette command failed. The document should contain no partial changes.'))
-
-    try:
-        begin(document, whole_object_error, accept)
-    except LocateError as exc:
-        raise PaletteError(str(exc)) from exc
-    except Exception as exc:
-        raise PaletteError(tr('Element locate did not start. ') + str(exc)) from exc
-
-
-def _open_indexed_color(document, objects):
-    from unistation.transform_gui import whole_object_error
-
-    same_document(document)
-    live = []
-    for obj in objects:
-        if document.getObject(getattr(obj, "Name", "")) is not obj:
-            raise PaletteError(tr('The object was deleted. Color was not assigned.'))
-        reason = whole_object_error(obj)
-        if reason:
-            raise PaletteError(_selection_message(reason))
-        live.append(obj)
-    _palette, colors = colors_for_display(document)
-    ColorDialog(document, live, colors, _window()).exec_()
-
-
 def _edit_palette(document):
     _palette, colors = colors_for_display(document)
     dialog = PaletteEditor(document, colors, _palette is not None, _window())
     dialog.exec_()
 
 
-def _import_palette(document):
+def _import_palette(document, parent=None, *, discard_draft=False):
     classify_palettes(document)
     path, _selected = QtWidgets.QFileDialog.getOpenFileName(
-        _window(),
+        parent or _window(),
         tr('Load palette'),
         "",
         tr('UniStation palette (*.ustnpalette.json *.uspalette.json)'),
     )
     if not path:
-        return
+        return None
     colors = load_palette_file(path)
     same_document(document)
     palette = classify_palettes(document)
@@ -175,59 +119,35 @@ def _import_palette(document):
             + str(count)
             + tr('. Direct-RGB objects and other documents are unchanged.')
         )
-    if not _confirm(text):
-        return
+    if discard_draft:
+        text += "\n\n" + tr('The pending edits in this window will be discarded.')
+    if not _confirm(text, parent):
+        return None
     same_document(document)
     replace_palette(document, colors)
+    return colors
 
 
-def _export_palette(document):
+def _export_palette(document, parent=None):
     palette, colors = colors_for_display(document)
     if palette is None:
         _info(
             tr(('The document has no palette or indexed objects. The built-in UniStation snapshot will be saved. '
-             'No document object is created.'))
+             'No document object is created.')),
+            parent,
         )
         name = "UniStation"
     else:
         name = None
-    path = _save_path()
+    path = _save_path(parent)
     if not path:
-        return
+        return False
     same_document(document)
     palette_now, colors_now = colors_for_display(document)
     if (palette is None) != (palette_now is None):
         raise PaletteError(tr('The palette state changed. The file was not written.'))
     write_palette_file(path, colors_now if palette_now is not None else colors, name)
-
-
-def _targets():
-    from unistation.transform_gui import selected_objects
-
-    try:
-        return selected_objects()
-    except RuntimeError as exc:
-        raise PaletteError(_selection_message(str(exc))) from exc
-
-
-def _selection_message(text):
-    known = {
-        tr('Select whole objects before starting Move or Copy'):
-            tr('Select one or more whole objects.'),
-        tr('Select whole objects, not edges or vertices'):
-            tr('Select whole objects, not edges or vertices.'),
-        tr('Select objects from the active document only'):
-            tr('Select objects from the active document only.'),
-        tr('Supported: independent Draft wires/circles/arcs and simple Part features'):
-            tr('Independent Draft wires, circles, arcs and simple Part features are supported.'),
-    }
-    if text in known:
-        return known[text]
-    if text.startswith(tr('Attached, nested or dependent objects are not supported yet:')):
-        return tr('Nested, dependent or attached objects cannot be colored yet: ') + text.split(":", 1)[1].strip()
-    if text.startswith(tr('Invalid shape:')):
-        return tr('Invalid shape: ') + text.split(":", 1)[1].strip()
-    return tr('The objects are unsuitable for indexed color. ') + text
+    return True
 
 
 def _require_idle():
@@ -268,9 +188,9 @@ def _save_path(parent=None):
     return selected[0] if selected else None
 
 
-def _confirm(text):
+def _confirm(text, parent=None):
     answer = QtWidgets.QMessageBox.question(
-        _window(),
+        parent or _window(),
         "UniStation",
         text,
         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
@@ -283,8 +203,8 @@ def _warn(text):
     QtWidgets.QMessageBox.warning(_window(), "UniStation", text)
 
 
-def _info(text):
-    QtWidgets.QMessageBox.information(_window(), "UniStation", text)
+def _info(text, parent=None):
+    QtWidgets.QMessageBox.information(parent or _window(), "UniStation", text)
 
 
 def _critical(text):
@@ -335,6 +255,7 @@ class PaletteEditor(QtWidgets.QDialog):
         super().__init__(parent)
         self.document = document
         self.colors = [tuple(rgb) for rgb in colors]
+        self.applied_colors = tuple(self.colors)
         self.stored = stored
         self.selected = None
         bind(self, 'setWindowTitle', 'Palette editor')
@@ -362,23 +283,34 @@ class PaletteEditor(QtWidgets.QDialog):
         self.detail.setWordWrap(True)
         layout.addWidget(self.detail)
         buttons = QtWidgets.QDialogButtonBox()
+        load = translated_dialog_button(buttons, 'Load', QtWidgets.QDialogButtonBox.ActionRole)
         save = translated_dialog_button(buttons, 'Save', QtWidgets.QDialogButtonBox.ActionRole)
-        save_as = translated_dialog_button(buttons, 'Save as', QtWidgets.QDialogButtonBox.ActionRole)
+        self.save_draft_button = translated_dialog_button(buttons, 'Save draft…', QtWidgets.QDialogButtonBox.ActionRole)
+        apply = translated_dialog_button(buttons, 'Apply to document', QtWidgets.QDialogButtonBox.ActionRole)
+        load.setObjectName("UstnPaletteLoad")
+        save.setObjectName("UstnPaletteSave")
+        apply.setObjectName("UstnPaletteApply")
+        self.save_draft_button.setEnabled(False)
         buttons.addButton(QtWidgets.QDialogButtonBox.Close)
-        save.clicked.connect(self.save_document)
-        save_as.clicked.connect(self.save_file_as)
+        load.clicked.connect(self.load_file)
+        save.clicked.connect(self.save_file)
+        self.save_draft_button.clicked.connect(self.save_file_as)
+        apply.clicked.connect(self.save_document)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._refresh()
 
     def _show_notice(self):
         if self.stored:
-            bind(self.notice, 'setText', 'The document palette is shown. Color edits stay in this window until Save is pressed. Save '
-                 'writes the palette to the open document and updates indexed objects. Save as writes a separate '
-                 'file.')
+            bind(self.notice, 'setText', 'Apply to document updates the drawing. Save exports the document palette.')
         else:
-            bind(self.notice, 'setText', 'The built-in snapshot is shown; it is not saved in the document yet. Save writes it to the open '
-                 'document. Save as writes a separate file.')
+            bind(self.notice, 'setText', 'The built-in palette is shown. Apply to document installs it in the drawing.')
+
+    def _mark_applied(self):
+        self.stored = True
+        self.applied_colors = tuple(self.colors)
+        self.save_draft_button.setEnabled(False)
+        self._show_notice()
 
     def show_index(self, index):
         if self.selected == index:
@@ -418,8 +350,35 @@ class PaletteEditor(QtWidgets.QDialog):
             self._show_detail(index)
             return
         self.colors[index] = (chosen.red(), chosen.green(), chosen.blue())
+        self.save_draft_button.setEnabled(tuple(self.colors) != self.applied_colors)
         self._refresh()
         self._show_detail(index)
+
+    def load_file(self):
+        try:
+            _require_idle()
+            same_document(self.document)
+            colors = _import_palette(self.document, self, discard_draft=tuple(self.colors) != self.applied_colors)
+        except PaletteError as exc:
+            QtWidgets.QMessageBox.warning(self, "UniStation", str(exc))
+            return
+        if colors is None:
+            return
+        self.colors[:] = colors
+        self._mark_applied()
+        self._refresh()
+        bind(self.detail, 'setText', 'The palette was loaded into the document.')
+
+    def save_file(self):
+        try:
+            _require_idle()
+            same_document(self.document)
+            written = _export_palette(self.document, self)
+        except PaletteError as exc:
+            QtWidgets.QMessageBox.warning(self, "UniStation", str(exc))
+            return
+        if written:
+            bind(self.detail, 'setText', 'The palette was saved to a file.')
 
     def save_document(self):
         try:
@@ -429,8 +388,7 @@ class PaletteEditor(QtWidgets.QDialog):
         except PaletteError as exc:
             QtWidgets.QMessageBox.warning(self, "UniStation", str(exc))
             return
-        self.stored = True
-        self._show_notice()
+        self._mark_applied()
         bind(self.detail, 'setText', 'The palette was saved to the document. Indexed objects use the new colors.')
 
     def save_file_as(self):
@@ -442,150 +400,7 @@ class PaletteEditor(QtWidgets.QDialog):
         except PaletteError as exc:
             QtWidgets.QMessageBox.warning(self, "UniStation", str(exc))
             return
-        bind(self.detail, 'setText', 'The file was written. This button did not change the document.')
-
-
-class ColorDialog(QtWidgets.QDialog):
-    """Modal chooser. Opening it does not create a palette or touch the document."""
-
-    def __init__(self, document, objects, colors, parent=None):
-        super().__init__(parent)
-        self.document = document
-        self.colors = colors
-        self.user_chose = False
-        self._loading = True
-        bind(self, 'setWindowTitle', 'Indexed color')
-        self.setModal(True)
-        indexes = []
-        drifted = False
-        for obj in objects:
-            mode = _mode(obj)
-            if mode == "PaletteIndex":
-                indexes.append(_stored_index(obj))
-                if color_drift(obj, colors):
-                    drifted = True
-        self.mixed = len(set(indexes)) > 1 or (indexes and len(indexes) != len(objects))
-        initial = indexes[0] if indexes and not self.mixed else 7
-
-        layout = QtWidgets.QVBoxLayout(self)
-        grid = QtWidgets.QGridLayout()
-        grid.setSpacing(2)
-        self.buttons = []
-        for index, rgb in enumerate(colors):
-            button = QtWidgets.QToolButton()
-            button.setFixedSize(30, 30)
-            button.setAutoRaise(False)
-            bind(button, 'setToolTip', 'Index {0} — RGB {1}, {2}, {3}', index, *rgb)
-            button.clicked.connect(lambda checked=False, chosen=index: self.choose(chosen))
-            grid.addWidget(button, index // 16, index % 16)
-            self.buttons.append(button)
-        layout.addLayout(grid)
-
-        row = QtWidgets.QHBoxLayout()
-        row.addWidget(translated_label('Index'))
-        self.spin = QtWidgets.QSpinBox()
-        self.spin.setRange(0, 255)
-        self.spin.setValue(initial)
-        self.spin.valueChanged.connect(self._spin_changed)
-        row.addWidget(self.spin)
-        self.sample = QtWidgets.QLabel()
-        self.sample.setFixedSize(48, 24)
-        row.addWidget(self.sample)
-        self.detail = QtWidgets.QLabel()
-        row.addWidget(self.detail, 1)
-        layout.addLayout(row)
-
-        self.notice = QtWidgets.QLabel()
-        self.notice.setWordWrap(True)
-        layout.addWidget(self.notice)
-        if self.mixed:
-            bind(self.notice, 'setText', 'Mixed')
-        if drifted:
-            warning = translated_label('Color changed outside UniStation')
-            warning.setWordWrap(True)
-            layout.addWidget(warning)
-
-        buttons = QtWidgets.QDialogButtonBox()
-        apply_index = translated_dialog_button(buttons, 'Apply index', QtWidgets.QDialogButtonBox.AcceptRole)
-        keep_rgb = translated_dialog_button(buttons, 'Keep RGB', QtWidgets.QDialogButtonBox.ActionRole)
-        translated_dialog_button(buttons, 'Cancel', QtWidgets.QDialogButtonBox.RejectRole)
-        apply_index.clicked.connect(self._apply)
-        keep_rgb.clicked.connect(self._release)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-        self._loading = False
-        self._show_index(initial, announce=not self.mixed)
-
-    def choose(self, index):
-        self.user_chose = True
-        self._loading = True
-        self.spin.setValue(index)
-        self._loading = False
-        self._show_index(index, announce=True)
-
-    def _spin_changed(self, index):
-        if self._loading:
-            return
-        self.user_chose = True
-        self._show_index(index, announce=True)
-
-    def _show_index(self, index, announce):
-        for position, button in enumerate(self.buttons):
-            selected = announce and position == index
-            button.setText(str(index) if selected else "")
-            button.setStyleSheet(_swatch_style(self.colors[position], selected))
-        red, green, blue = self.colors[index]
-        self.sample.setStyleSheet(
-            "background-color: #%02x%02x%02x; border: 1px solid palette(mid);" % (red, green, blue)
-        )
-        if announce:
-            bind(self.detail, 'setText', 'Index {0} — RGB {1}, {2}, {3}', index, red, green, blue)
-            if self.notice.text() == tr('Mixed'):
-                bind(self.notice, 'setText', '')
-        else:
-            bind(self.detail, 'setText', 'An index is not inferred from a matching RGB color.')
-
-    def _apply(self):
-        if self.mixed and not self.user_chose:
-            _warn(tr('Choose one index. The selected objects currently have different indices.'))
-            return
-        try:
-            _require_idle()
-            same_document(self.document)
-            assign_index(self.document, _targets(), int(self.spin.value()))
-        except PaletteError as exc:
-            _warn(str(exc))
-            return
-        self.accept()
-
-    def _release(self):
-        try:
-            _require_idle()
-            same_document(self.document)
-            release_rgb(self.document, _targets())
-        except PaletteError as exc:
-            _warn(str(exc))
-            return
-        self.accept()
-
-
-def _mode(obj):
-    if "UstnColorMode" not in getattr(obj, "PropertiesList", []):
-        return None
-    mode = obj.UstnColorMode
-    return None if mode is None else str(mode)
-
-
-def _stored_index(obj):
-    value = obj.UstnColorIndex
-    if isinstance(value, (list, tuple)):
-        value = value[0]
-    if isinstance(value, bool):
-        raise PaletteError(tr('Index “') + obj.Label + tr('” is damaged.'))
-    index = int(value)
-    if index < 0 or index > 255:
-        raise PaletteError(tr('Index “') + obj.Label + tr('” is outside the range 0..255.'))
-    return index
+        bind(self.detail, 'setText', 'The draft was saved to a file.')
 
 
 def _swatch_style(rgb, selected, font_size=8):

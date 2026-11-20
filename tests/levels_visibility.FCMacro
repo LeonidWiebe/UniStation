@@ -1,0 +1,224 @@
+"""Level visibility regression cases for FreeCAD 1.1.4 with a hidden window."""
+
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from types import SimpleNamespace
+
+import FreeCAD as App
+import FreeCADGui as Gui
+
+
+run_dir = Path(os.environ["USTN_LEVEL_VISIBILITY_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_LEVEL_VISIBILITY_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+sys.path.insert(0, str(module_dir))
+
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+case = "isolated hidden GUI"
+document_name = None
+observer = None
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+def edit_level(level):
+    baseline = levels.read_table(doc)
+    records = tuple(level if entry.identifier == level.identifier else entry for entry in baseline[1])
+    levels.save_table(doc, baseline, records)
+
+
+def line(y):
+    obj = Draft.make_line(App.Vector(0, y, 0), App.Vector(20, y, 0))
+    doc.recompute()
+    return obj
+
+
+def check_view(obj, visible, selectable):
+    assert (obj.ViewObject.Visibility, obj.ViewObject.Selectable) == (visible, selectable), obj.Name
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    assert not Gui.getMainWindow().isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4"), App.Version()
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    for key, filename in (("UserParameter", "user.cfg"), ("SystemParameter", "system.cfg")):
+        assert Path(App.ConfigGet(key)).resolve() == profile / filename, key
+
+    import Draft
+    from PySide import QtCore
+    from unistation import attributes, levels, levels_gui
+    from unistation.gui import Backend, start
+    from unistation.level_visibility_gui import VisibilityObserver
+    from unistation.transform_gui import TransformBackend, whole_object_error
+
+    assert Path(levels.__file__).resolve().is_relative_to(module_dir)
+    observer = VisibilityObserver()
+    passed()
+
+    case = "Level Manager allows editing Display, Freeze, Lock and Plot"
+    doc = App.newDocument("LevelVisibilityVerification")
+    document_name = doc.Name
+    doc.UndoMode = 1
+    visible, hidden, unselectable, implicit = [line(y) for y in (0, 5, 10, 15)]
+    hidden.ViewObject.Visibility = False
+    unselectable.ViewObject.Selectable = False
+    contour = levels.Level("contour", "Contour")
+    levels.save_table(doc, (None, None), (levels.DEFAULT_LEVEL, contour))
+    levels.assign_elements(doc, levels.read_table(doc), (visible, hidden, unselectable), contour.identifier)
+    manager = levels_gui.LevelDialog(doc, Gui.getMainWindow())
+    for column in (levels_gui.DISPLAY, levels_gui.FREEZE, levels_gui.LOCK, levels_gui.PLOT):
+        assert manager.table.item(1, column).flags() & QtCore.Qt.ItemIsUserCheckable
+    manager.table.item(1, levels_gui.DISPLAY).setCheckState(QtCore.Qt.Unchecked)
+    display_off = manager.edited_level(1)
+    assert display_off == replace(contour, global_display=False)
+    manager.deleteLater()
+    passed()
+
+    case = "Global Display preserves individual visibility and copies"
+    edit_level(display_off)
+    check_view(visible, False, True)
+    check_view(hidden, False, True)
+    check_view(unselectable, False, False)
+    check_view(implicit, True, True)
+    existing = {obj.Name for obj in doc.Objects}
+    backend = SimpleNamespace(doc=doc, objects=[visible], alive=lambda: True)
+    TransformBackend.transform(backend, App.Vector(0, 5, 0), copy=True)
+    copied, = [obj for obj in doc.Objects if obj.Name not in existing]
+    check_view(copied, False, True)
+    edit_level(contour)
+    check_view(copied, True, True)
+    check_view(visible, True, True)
+    check_view(hidden, False, True)
+    check_view(unselectable, True, False)
+    passed()
+
+    case = "Freeze clears selection and cached snap targets and reverses with Undo and Redo"
+    Gui.Selection.clearSelection(doc.Name)
+    Gui.Selection.addSelection(implicit)
+    Gui.Selection.addSelection(visible)
+    assert visible in Gui.Selection.getSelection()
+    snapper = getattr(Gui, "Snapper", None)
+    Gui.Snapper = SimpleNamespace(lastObj=[visible.Name, implicit.Name],
+                                  lastObjSubelements=["Edge1", "Vertex1"])
+    frozen = replace(contour, global_freeze=True)
+    try:
+        edit_level(frozen)
+        assert Gui.Snapper.lastObj == [implicit.Name]
+        assert Gui.Snapper.lastObjSubelements == ["Vertex1"]
+    finally:
+        Gui.Snapper = snapper
+    check_view(visible, False, False)
+    check_view(hidden, False, False)
+    check_view(unselectable, False, False)
+    assert Gui.Selection.getSelection() == [implicit]
+    assert whole_object_error(visible)
+    Gui.Selection.addSelection(visible)
+    Gui.updateGui()
+    assert visible not in Gui.Selection.getSelection()
+    visible.ViewObject.Visibility = True
+    visible.ViewObject.Selectable = True
+    Gui.updateGui()
+    check_view(visible, False, False)
+    doc.undo()
+    Gui.updateGui()
+    check_view(visible, True, True)
+    check_view(hidden, False, True)
+    check_view(unselectable, True, False)
+    assert levels.read_table(doc)[1][1] == contour
+    doc.redo()
+    Gui.updateGui()
+    check_view(visible, False, False)
+    assert levels.read_table(doc)[1][1] == frozen
+    passed()
+
+    case = "Thaw respects Global Display and implicit Default is applied"
+    edit_level(replace(frozen, global_display=False))
+    edit_level(display_off)
+    check_view(visible, False, True)
+    check_view(unselectable, False, False)
+    edit_level(contour)
+    check_view(visible, True, True)
+    check_view(hidden, False, True)
+    edit_level(replace(levels.DEFAULT_LEVEL, global_freeze=True))
+    check_view(implicit, False, False)
+    check_view(visible, True, True)
+    assert levels.element_level_id(implicit) is None
+    doc.undo()
+    check_view(implicit, True, True)
+    passed()
+
+    case = "Hidden and frozen active layers prevent start and placement"
+    attributes.set_active_level(doc, contour.identifier)
+    for unavailable in (display_off, frozen):
+        edit_level(unavailable)
+        for kind in ("line", "wire", "circle", "arc"):
+            try:
+                start(kind)
+            except levels.LevelUnavailableError:
+                pass
+            else:
+                raise AssertionError(kind)
+        commit = SimpleNamespace(doc=doc, alive=lambda: True, refresh_active_attributes=lambda: None)
+
+        def unexpected_geometry():
+            raise AssertionError("Placement called the geometry factory on an unavailable level")
+
+        try:
+            Backend.create_geometry(commit, "Blocked placement", unexpected_geometry)
+        except levels.LevelUnavailableError:
+            pass
+        else:
+            raise AssertionError("Placement did not check the active level")
+        assert attributes.level_choices(doc)[1].identifier == contour.identifier
+    attributes.set_active_level(doc, levels.DEFAULT_ID)
+    assert attributes.placement_level_id(doc) == levels.DEFAULT_ID
+    passed()
+
+    case = "Assignment and FCStd reopen preserve native and individual view state"
+    baseline = levels.read_table(doc)
+    levels.assign_elements(doc, baseline, (implicit,), contour.identifier)
+    check_view(implicit, False, False)
+    doc.undo()
+    check_view(implicit, True, True)
+    doc.redo()
+    check_view(implicit, False, False)
+    names = [obj.Name for obj in (visible, hidden, unselectable, implicit)]
+    path = run_dir / "level-visibility.FCStd"
+    doc.saveAs(str(path))
+    App.closeDocument(document_name)
+    document_name = None
+    doc = App.openDocument(str(path))
+    document_name = doc.Name
+    visible, hidden, unselectable, implicit = [doc.getObject(name) for name in names]
+    for obj in (visible, hidden, unselectable, implicit):
+        check_view(obj, False, False)
+    edit_level(contour)
+    check_view(visible, True, True)
+    check_view(hidden, False, True)
+    check_view(unselectable, True, False)
+    check_view(implicit, True, True)
+    assert not Gui.getMainWindow().isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    if observer is not None:
+        observer.close()
+    if document_name is not None and document_name in App.listDocuments():
+        App.closeDocument(document_name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation level visibility: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)

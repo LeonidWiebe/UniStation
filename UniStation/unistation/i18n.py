@@ -72,7 +72,6 @@ TOOLBAR_LABELS = {
     "UniStation": "UniStation",
     "Рисование": QT_TRANSLATE_NOOP("UniStation", "Drawing"),
     "Манипуляции": QT_TRANSLATE_NOOP("UniStation", "Manipulations"),
-    "Палитра": QT_TRANSLATE_NOOP("UniStation", "Palette"),
     "Атрибуты": QT_TRANSLATE_NOOP("UniStation", "Attributes"),
     "Привязки": QT_TRANSLATE_NOOP("UniStation", "Snapping"),
 }

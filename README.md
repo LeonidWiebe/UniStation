@@ -1,73 +1,58 @@
 # UniStation
 
-[Русский](README.ru.md)
+[Русский](README.ru.md) · [Website](https://ustation.ru/en/)
 
-**[Download UniStation Windows installer](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.3/UniStation-0.1.0-alpha.3-win64-setup.exe)**
-([v0.1.0-alpha.3 prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)).
-Choose components and installation directory; default `%APPDATA%\FreeCAD\v1-1\Mod`.
-[Instructions and review status](docs/installer.md). The wizard itself still
-awaits runtime validation; compilation and payload checks are complete.
+I am building UniStation for my own work with the help of AI tools and sharing
+it with anyone interested. It is an experimental FreeCAD workbench for people
+used to MicroStation and AutoCAD. AxisFlow provides AccuDraw-like precision input.
 
-UniStation is an experimental Python workbench for FreeCAD. It brings a drafting
-workflow inspired by MicroStation to FreeCAD, with precise point input through
-[AxisFlow](https://github.com/LeonidWiebe/AxisFlow).
+**[Download Windows installer v0.1.0-alpha.4](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.4/UniStation-0.1.0-alpha.4-win64-setup.exe)** ·
+[Release notes and checks](docs/release-v0.1.0-alpha.4.md).
 
-The installer includes UniStation and optional AxisFlow theme_01 with sources.
-FreeCAD is installed separately and started normally. No PowerShell launcher
-or separate candidate profile is required. The Git repository tracks no
-AxisFlow binary. The earlier ZIP release remains available in release history.
+Select UniStation, AxisFlow, documentation/Start menu links and the parent Mod
+directory. Default: `%APPDATA%\FreeCAD\v1-1\Mod`. FreeCAD is installed
+separately. Start it normally after setup. [Installer guide](docs/installer.md).
 
-Tested with **FreeCAD 1.1.1**, the checked minimum. 1.1.4 remains the earlier reference environment.
-This does not establish every ABI combination or a complete regression.
-Read [release notes and installation](docs/release-v0.1.0-alpha.3.md),
-[compatibility](docs/compatibility-1.1.1.md) and [distribution](docs/distribution.md).
+## Available
 
-## Available features
+- Drawing and editing supported whole objects with AxisFlow, live attributes
+  and shared Draft snapping.
+- FCStd layers, modeless manager, active layer/assignment, Global Display,
+  Global Freeze, Lock in supported operations and Plot.
+- Persistent ByLayer color/style/weight and Change Attributes for existing objects.
+- Edit Palette with 256 indexed colors and JSON Load/Save.
+- Direct vector PDF for supported planar XY geometry, A4–A0 and scale selection.
+- Five toolbars, English/Russian UI and a separate coordinate input window.
 
-- Line, open/closed polyline, circle from center and radius point, three-point arc.
-- Move and Copy for supported, preselected whole objects.
-- Document palette with 256 indexed colors and JSON import/export.
-- Active color, four line styles and 32 screen weight indices for new geometry.
-  These can change during drawing, updating the preview without losing points.
-- Six toolbars, shared Draft/AxisFlow snapping controls, mouse Reset assignment,
-  optional selection of operation results, and English/Russian interfaces.
-- A separate modeless coordinate window for Line/Wire/Circle, supporting world
-  `abs`/`rel` XYZ input and mm/cm/m units.
+[Usage](docs/usage.md) · [Status and limits](docs/status.md).
+Rectangle/Freeform and Scale/Rotate/Mirror/Array remain disabled. Move/Copy
+require preselected supported whole objects. Per-view layers, protection outside
+UniStation, external layer libraries and TechDraw are deferred.
 
-AxisFlow is the primary point-input system. Commands must respect its current
-compass state. Circle follows the current compass orientation. Arc keeps already
-accepted world points and derives the final arc plane from its three points.
+## Compatibility and validation
 
-Layer, Rectangle, Freeform Shape, Scale, Rotate, Mirror and Array are disabled
-placeholders. Layers and ByLayer behavior are not implemented. See
-[status and limitations](docs/status.md) before relying on a feature.
+Windows x64 / Python 3.11; declared FreeCAD range 1.1.1–1.1.4. Earlier product
+functionality was tested in 1.1.1; recent feature checks used 1.1.4. This does
+not establish a complete alpha.4 run in 1.1.1 or every ABI combination.
 
-## Start here
+The alpha.4 unit run completed with **58/67 passing, 5 failures and 4 errors**
+in Circle/Arc legacy tests; the recorded test-double limitation remains open.
+The setup is compiled and inspected; execution of setup/uninstall/failure
+recovery is still unvalidated. EXE is unsigned. [Testing details](docs/testing.md).
 
-1. Download the [installer prerelease](https://github.com/LeonidWiebe/UniStation/releases/tag/v0.1.0-alpha.3)
-   and follow its [installation instructions](docs/release-v0.1.0-alpha.3.md).
-   For source-only installation, read [dependencies](docs/dependencies.md)
-   and the [manual procedure](docs/installation.md).
-2. Follow [usage](docs/usage.md) with a compatible FreeCAD/AxisFlow environment.
-3. Read [testing status](docs/testing.md): publishing preserved tests does not
-   mean they have been run against this snapshot.
+## Planned
 
-The installer supplies addons, with FreeCAD external.
-Addon Manager installation is not yet provided or verified. Completed manual checks do not cover every installation step or constitute a full regression.
+Local project configuration and search paths, then external layer libraries;
+block libraries (cells/shared cells), a references manager and saved views.
+The project is currently a workbench; a future FreeCAD fork is possible.
 
-## Development
+## Source and license
 
-[Architecture](docs/architecture.md) · [Changes](CHANGELOG.md) ·
-[Contributing and reporting problems](CONTRIBUTING.md)
+[Source installation](docs/installation.md) · [Build](packaging/installer/BUILD.md) ·
+[Changes](CHANGELOG.md) · [Contributing](CONTRIBUTING.md).
+AxisFlow is separately replaceable; its unchanged theme_01 binary, LGPL notice
+and complete corresponding source archive are included when selected in setup.
+Old releases remain available. Addon Manager delivery is not provided.
 
-Please include the commit, FreeCAD/AxisFlow versions, operating system and a
-short reproduction when reporting a problem. Do not attach a personal profile
-or private drawing. Contact: [info@imapp.su](mailto:info@imapp.su).
-
-## License
-
-UniStation code, original icons, translations and documentation in this
-repository are licensed under the GNU General Public License version 3
-(`GPL-3.0-only`). See [LICENSE](LICENSE) and
-[third-party notices](THIRD_PARTY_NOTICES.md). External dependencies retain
-their own licenses.
+UniStation is **GPL-3.0-only**; AxisFlow is **LGPL-2.1-or-later**.
+[LICENSE](LICENSE) · [Third-party notices](THIRD_PARTY_NOTICES.md).

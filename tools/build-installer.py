@@ -1,7 +1,7 @@
-"""Build the Windows wizard from the pinned release ZIP; never run the installer.
+"""Build the Windows wizard from current sources; never run the installer.
 
 Only Python's standard library and an explicit portable NSIS compiler are used.
-The accepted UniStation runtime/AxisFlow bytes are verified before packaging.
+Only AxisFlow is taken byte-for-byte from the pinned earlier release ZIP.
 """
 import argparse
 import ast
@@ -50,33 +50,35 @@ def main():
         raise ValueError('Wrong compiler version: ' + version)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         original = {n: archive.read(n) for n in archive.namelist()}
-    previous = json.loads(original['Mod/UniStation/PACKAGE-MANIFEST.json'])
     runtime, axisflow = {}, {}
-    for item in previous['runtime_files']:
-        name = item['archive'].removeprefix('UniStation/')
-        payload = original['Mod/UniStation/' + name]
-        if sha(payload) != item['sha256']:
-            raise ValueError('Runtime mismatch: ' + name)
-        if (ROOT / item['source']).is_file() and (ROOT / item['source']).read_bytes() != payload:
-            raise ValueError('Working product differs from accepted payload: ' + name)
+    for path in sorted((ROOT / 'UniStation').rglob('*')):
+        if not path.is_file() or '__pycache__' in path.parts or path.suffix == '.pyc':
+            continue
+        if path.suffix not in {'.py', '.svg', '.ts', '.qm'}:
+            raise ValueError('Unexpected runtime source: ' + str(path))
+        name = path.relative_to(ROOT / 'UniStation').as_posix()
+        payload = path.read_bytes()
         if name.endswith('.py'):
             ast.parse(payload.decode('utf-8-sig'), feature_version=(3, 11))
         elif name.endswith(('.svg', '.ts')):
             ET.fromstring(payload)
         runtime[name] = payload
-    assert len(runtime) == 45
+    if 'InitGui.py' not in runtime or 'unistation/__init__.py' not in runtime:
+        raise ValueError('Missing workbench entry points')
+    runtime_count = len(runtime)
+    source_hashes = {n: sha(b) for n, b in sorted(runtime.items())}
     for name in ['LICENSE', 'THIRD_PARTY_NOTICES.md']:
-        runtime[name] = original['Mod/UniStation/' + name]
-    metadata = ET.fromstring(original['Mod/UniStation/package.xml'])
-    metadata.find(f'{{{NS}}}version').text = config['version']
-    metadata.find(f'{{{NS}}}description').text = 'Experimental drafting workbench with AxisFlow point input.'
-    metadata.find(f'{{{NS}}}url[@type="repository"]').set('branch', 'installer/' + config['version'])
+        runtime[name] = (ROOT / name).read_bytes()
+    metadata = ET.parse(ROOT / 'package.xml').getroot()
+    if metadata.findtext(f'{{{NS}}}version') != config['version']:
+        raise ValueError('Metadata/config version mismatch')
+    metadata.find(f'{{{NS}}}content/{{{NS}}}workbench/{{{NS}}}subdirectory').text = './'
     runtime['package.xml'] = b'<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(metadata, encoding='utf-8') + b'\n'
     runtime['PACKAGE-MANIFEST.json'] = (json.dumps({
         'version': config['version'], 'kind': 'Windows installer runtime',
         'input_release_archive_sha256': config['input_archive_sha256'],
-        'product_baseline_commit': config['product_baseline_commit'],
-        'runtime_files_unchanged': 45,
+        'source_kind': 'current UniStation source tree',
+        'runtime_sources': source_hashes,
         'files': {n: sha(b) for n, b in sorted(runtime.items())}}, indent=2) + '\n').encode()
     for name, payload in original.items():
         if name.startswith('Mod/AxisFlow/'):
@@ -85,20 +87,22 @@ def main():
     assert sha(axisflow['AxisFlow.pyd']) == config['axisflow_binary_sha256']
     assert 'LICENSE' in axisflow and any(n.startswith('sources/') for n in axisflow)
     docs = {'INSTALL.md': (ROOT / 'packaging/installer/USER-GUIDE.md').read_bytes()}
-    public = ROOT / 'publication/package-candidate'
-    doc_root = public if (public / 'docs/usage.md').is_file() else ROOT
-    for name in ['docs/usage.md', 'docs/status.md', 'docs/compatibility-1.1.1.md']:
-        path = doc_root / name
-        # The installed Installer-source.zip is rebuildable with the pinned
-        # input ZIP even without the rest of the repository checkout.
-        docs[name] = path.read_bytes() if path.is_file() else original['Mod/UniStation/' + name]
+    for path in sorted((ROOT / 'docs').iterdir()):
+        if path.is_file() and path.suffix in {'.md', '.json'}:
+            docs[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    for path in sorted((ROOT / 'packaging').rglob('*.md')):
+        docs[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     for path in [ROOT / 'packaging/installer/UniStation.nsi', ROOT / 'tools/build-installer.py']:
         ast.parse(path.read_text(encoding='utf-8-sig')) if path.suffix == '.py' else None
     nsis_license = (compiler.parent / 'COPYING').read_bytes()
     own_sources = {name: (ROOT / name).read_bytes() for name in [
         'packaging/installer/UniStation.nsi', 'packaging/installer/config.json',
         'packaging/installer/USER-GUIDE.md', 'packaging/installer/USER-CHECK.md',
-        'packaging/installer/BUILD.md', 'tools/build-installer.py', 'LICENSE']}
+        'packaging/installer/BUILD.md', 'tools/build-installer.py', 'LICENSE',
+        'package.xml', 'THIRD_PARTY_NOTICES.md']}
+    own_sources.update({'UniStation/' + n: b for n, b in runtime.items()
+                        if n in source_hashes})
+    own_sources.update({n: (ROOT / n).read_bytes() for n in docs if n != 'INSTALL.md'})
     support = {
         'USER-GUIDE.txt': b'\xef\xbb\xbf' + docs['INSTALL.md'],
         'USER-CHECK.txt': b'\xef\xbb\xbf' + (ROOT / 'packaging/installer/USER-CHECK.md').read_bytes(),
@@ -138,6 +142,8 @@ def main():
         lines.append('!macroend')
     generated.write_text('\n'.join(lines) + '\n', encoding='utf-8-sig')
     exe = output / f"UniStation-{config['version']}-win64-setup.exe"
+    if exe.exists():
+        raise ValueError('Refusing to overwrite an existing installer: ' + str(exe))
     command = [str(compiler), '/V3', '/NOCD', '/INPUTCHARSET', 'UTF8',
                '/DVERSION=' + config['version'], '/DFILEVERSION=' + config['file_version'],
                '/DPAYLOAD=' + str(stage), '/DTABLES=' + str(generated),
@@ -151,12 +157,13 @@ def main():
                 'exe': str(exe), 'exe_sha256': sha(exe.read_bytes()), 'exe_bytes': exe.stat().st_size,
                 'compiler_version': version, 'payload_files': {
                     group + '/' + n: sha(b) for group, files in groups.items() for n, b in sorted(files.items())},
-                'product_runtime_unchanged': 45, 'axisflow_runtime_unchanged': 34,
+                'product_runtime_files': runtime_count, 'runtime_source_hashes': source_hashes,
+                'axisflow_runtime_unchanged': 34,
                 'installer_executed': False, 'freecad_gui_or_tests_run': False}
     (output / 'BUILD-MANIFEST.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     exe.with_suffix('.exe.sha256').write_text(f"{manifest['exe_sha256']}  {exe.name}\n", encoding='ascii')
     print(json.dumps({k: manifest[k] for k in ['version', 'exe', 'exe_bytes', 'exe_sha256',
-                                             'product_runtime_unchanged', 'axisflow_runtime_unchanged']}))
+                                             'product_runtime_files', 'axisflow_runtime_unchanged']}))
 
 
 if __name__ == '__main__':

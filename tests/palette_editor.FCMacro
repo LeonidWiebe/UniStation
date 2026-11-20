@@ -1,0 +1,168 @@
+"""Editor-owned palette import and export in isolated FreeCAD GUI."""
+
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from unittest.mock import patch
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtGui, QtWidgets
+
+
+run_dir = Path(os.environ["USTN_PALETTE_EDITOR_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_PALETTE_EDITOR_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+doc = None
+case = "isolated hidden workbench and Edit Palette placement"
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+def open_editor(check):
+    opened = []
+    errors = []
+
+    def exercise(editor):
+        opened.append(editor)
+        try:
+            buttons = tuple(editor.findChild(QtWidgets.QPushButton, name)
+                            for name in ("UstnPaletteLoad", "UstnPaletteSave", "UstnPaletteApply"))
+            assert all(button is not None for button in buttons)
+            load, save, apply = buttons
+            assert load.text() == tr("Load") and save.text() == tr("Save")
+            check(editor, load, save, apply)
+        except Exception as exc:
+            errors.append(exc)
+        return QtWidgets.QDialog.Rejected
+
+    with patch.object(gui.PaletteEditor, "exec_", exercise):
+        action.trigger()
+    assert len(opened) == 1
+    if errors:
+        raise errors[0]
+
+
+def edit_color(editor, index, rgb):
+    with patch.object(QtWidgets.QColorDialog, "getColor", return_value=QtGui.QColor(*rgb)):
+        editor.edit_color(index)
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    window = Gui.getMainWindow()
+    assert not window.isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4")
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    for key, filename in (("UserParameter", "user.cfg"), ("SystemParameter", "system.cfg")):
+        assert Path(App.ConfigGet(key)).resolve() == profile / filename, key
+
+    doc = App.newDocument("PaletteEditorVerification")
+    doc.UndoMode = 1
+    Gui.activateWorkbench("DraftWorkbench")
+    assert Gui.activateWorkbench("UniStationWorkbench")
+    Gui.updateGui()
+    import Draft
+    from unistation import palette, palette_gui as gui
+    from unistation.i18n import tr
+
+    assert Path(gui.__file__).resolve().is_relative_to(module_dir)
+    action, = Gui.Command.get("UniStation_EditPalette").getAction()
+    toolbars = window.findChildren(QtWidgets.QToolBar)
+    toolbar, = [item for item in toolbars if action in item.actions()]
+    assert toolbar.objectName() == "UniStation" and toolbar.actions()[-1] == action
+    assert not any(item.objectName() in ("Палитра", "Palette") for item in toolbars)
+    passed()
+
+    case = "Save exports the built-in palette without creating a document palette"
+    built_in = palette.builtin_colors()
+    exported = run_dir / "built-in.ustnpalette.json"
+
+    def check_default(editor, _load, save, _apply):
+        with (
+            patch.object(gui, "_save_path", return_value=str(exported)) as select_path,
+            patch.object(gui, "_info") as info,
+        ):
+            save.click()
+        select_path.assert_called_once_with(editor)
+        assert info.call_args.args[1] is editor
+        assert palette.load_palette_file(exported) == built_in
+        assert palette.classify_palettes(doc) is None
+
+    open_editor(check_default)
+    passed()
+
+    case = "Load refreshes the editor and indexed objects after confirmation"
+    indexed = Draft.make_line(App.Vector(0, 0, 0), App.Vector(20, 0, 0))
+    direct = Draft.make_line(App.Vector(0, 10, 0), App.Vector(20, 10, 0))
+    doc.recompute()
+    palette.assign_index(doc, [indexed], 4)
+    direct_rgb = palette.displayed_rgb(direct)
+    imported = list(built_in)
+    imported[4] = (19, 29, 39)
+    source = run_dir / "source.ustnpalette.json"
+    palette.write_palette_file(source, imported)
+
+    def check_import(editor, load, _save, _apply):
+        edit_color(editor, 4, (200, 201, 202))
+        assert editor.save_draft_button.isEnabled()
+        with patch.object(QtWidgets.QFileDialog, "getOpenFileName", return_value=(str(source), "")) as chooser:
+            with patch.object(gui, "_confirm", return_value=False) as confirm:
+                load.click()
+            assert chooser.call_args.args[0] is editor
+            assert confirm.call_args.args[1] is editor
+            assert tr("The pending edits in this window will be discarded.") in confirm.call_args.args[0]
+            assert editor.colors[4] == (200, 201, 202)
+            assert palette.displayed_rgb(indexed) == built_in[4]
+            with patch.object(gui, "_confirm", return_value=True):
+                load.click()
+        assert editor.colors == imported and not editor.save_draft_button.isEnabled()
+        assert palette.colors_for_display(doc)[1] == tuple(imported)
+        assert palette.displayed_rgb(indexed) == imported[4]
+        assert palette.displayed_rgb(direct) == direct_rgb
+
+    open_editor(check_import)
+    passed()
+
+    case = "Save exports the document colors and Apply commits the editor draft"
+    saved = run_dir / "document.ustnpalette.json"
+    draft = run_dir / "draft.ustnpalette.json"
+    draft_rgb = (52, 62, 72)
+
+    def check_export(editor, _load, save, apply):
+        edit_color(editor, 4, draft_rgb)
+        with patch.object(gui, "_save_path", return_value=str(saved)):
+            save.click()
+        assert palette.load_palette_file(saved) == tuple(imported)
+        assert palette.displayed_rgb(indexed) == imported[4]
+        with patch.object(gui, "_save_path", return_value=str(draft)):
+            editor.save_draft_button.click()
+        assert palette.load_palette_file(draft)[4] == draft_rgb
+        assert palette.displayed_rgb(indexed) == imported[4]
+        apply.click()
+        assert palette.displayed_rgb(indexed) == draft_rgb
+        assert palette.displayed_rgb(direct) == direct_rgb
+        assert not editor.save_draft_button.isEnabled()
+
+    open_editor(check_export)
+    assert not window.isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    if doc is not None:
+        App.closeDocument(doc.Name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation Palette Editor: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)

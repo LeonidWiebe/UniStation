@@ -1,0 +1,184 @@
+"""Native Delete and Level presentation in the UniStation workbench."""
+
+from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import sys
+import traceback
+from types import SimpleNamespace
+from zipfile import ZipFile
+
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtWidgets
+
+
+run_dir = Path(os.environ["USTN_LEVEL_UI_RUN"]).resolve()
+module_dir = Path(os.environ["USTN_LEVEL_UI_MODULE"]).resolve()
+profile = run_dir / "profile"
+sys.dont_write_bytecode = True
+report = {"status": "failed", "freecad_version": list(App.Version()), "cases": []}
+case = "isolated hidden workbench"
+doc = None
+
+
+def passed():
+    report["cases"].append({"name": case, "status": "passed"})
+
+
+def line(y):
+    return Draft.make_line(App.Vector(0, y, 0), App.Vector(20, y, 0))
+
+
+def select(*objects):
+    Gui.Selection.clearSelection(doc.Name)
+    for obj in objects:
+        Gui.Selection.addSelection(doc.Name, obj.Name)
+    Gui.updateGui()
+    assert [item.Object for item in Gui.Selection.getSelectionEx()] == list(objects)
+
+
+def edit_level(level):
+    baseline = levels.read_table(doc)
+    records = tuple(level if record.identifier == level.identifier else record for record in baseline[1])
+    levels.save_table(doc, baseline, records)
+    Gui.updateGui()
+
+
+def label_at(obj):
+    pick = None if obj is None else {"Document": obj.Document.Name, "Object": obj.Name}
+    view = SimpleNamespace(getCursorPos=lambda: (10, 10), getObjectInfo=lambda point: pick)
+    return level_ui._hover_label(view)
+
+
+try:
+    assert App.GuiUp and App.ConfigGet("StartHidden") == "1"
+    window = Gui.getMainWindow()
+    assert not window.isVisible()
+    assert tuple(App.Version()[:3]) == ("1", "1", "4")
+    assert Path(App.getUserAppDataDir()).resolve().is_relative_to(profile)
+    for key, filename in (("UserParameter", "user.cfg"), ("SystemParameter", "system.cfg")):
+        assert Path(App.ConfigGet(key)).resolve() == profile / filename, key
+
+    doc = App.newDocument("LevelUiVerification")
+    doc.UndoMode = 1
+    Gui.activateWorkbench("DraftWorkbench")
+    assert Gui.activateWorkbench("UniStationWorkbench")
+    Gui.updateGui()
+    import Draft
+    from unistation import levels, level_ui
+
+    assert Path(level_ui.__file__).resolve().is_relative_to(module_dir)
+    display, guard = level_ui._controller
+    assert guard is not None
+    action, = Gui.Command.get("Std_Delete").getAction()
+    assert guard.action == action
+    assert not action.shortcut().isEmpty()
+    assert any(action in menu.actions() for menu in window.menuBar().findChildren(QtWidgets.QMenu))
+    passed()
+
+    case = "native Delete refuses a mixed selection and a group with a locked member"
+    legacy, protected, editable = line(0), line(5), line(10)
+    base = levels.DEFAULT_LEVEL
+    contour = levels.Level("contour-stable-id", "Contour")
+    levels.save_table(doc, (None, None), (base, contour))
+    # Model a document saved before the ID was hidden by default.
+    protected.addProperty("App::PropertyString", levels.ELEMENT_LEVEL, "UniStation", read_only=True)
+    setattr(protected, levels.ELEMENT_LEVEL, contour.identifier)
+    locked = replace(contour, locked=True)
+    edit_level(locked)
+    doc.recompute()
+    select(editable, protected)
+    before = [obj.Name for obj in doc.Objects], doc.UndoCount
+    action.trigger()
+    assert ([obj.Name for obj in doc.Objects], doc.UndoCount) == before
+    assert contour.name in window.statusBar().currentMessage()
+    group = doc.addObject("App::DocumentObjectGroup", "GuardedGroup")
+    group.addObject(protected)
+    doc.recompute()
+    select(group)
+    before = [obj.Name for obj in doc.Objects], doc.UndoCount
+    action.trigger()
+    assert ([obj.Name for obj in doc.Objects], doc.UndoCount) == before
+    assert contour.name in window.statusBar().currentMessage()
+    group.removeObject(protected)
+    passed()
+
+    case = "Default Lock protects unassigned geometry and normal Delete resumes after unlock"
+    edit_level(replace(base, locked=True))
+    select(legacy)
+    before = [obj.Name for obj in doc.Objects], doc.UndoCount
+    action.trigger()
+    assert ([obj.Name for obj in doc.Objects], doc.UndoCount) == before
+    assert base.name in window.statusBar().currentMessage()
+    edit_level(base)
+    select(editable)
+    name = editable.Name
+    action.trigger()
+    assert doc.getObject(name) is None
+    doc.undo()
+    assert doc.getObject(name) is not None
+    passed()
+
+    case = "read-only layer names cover explicit and implicit assignments and follow rename and Undo"
+    select(protected, legacy)
+    name_property = level_ui.ELEMENT_LEVEL_NAME
+    assert getattr(protected, name_property) == contour.name
+    assert getattr(legacy, name_property) == base.name
+    assert "ReadOnly" in protected.getEditorMode(name_property)
+    assert "Hidden" in protected.getEditorMode(levels.ELEMENT_LEVEL)
+    renamed = replace(locked, name="Contours <A>")
+    edit_level(renamed)
+    assert getattr(protected, name_property) == renamed.name
+    assert levels.element_level_id(protected) == contour.identifier
+    assert renamed.name in label_at(protected)
+    assert base.name in label_at(legacy)
+    assert label_at(None) is None
+    doc.undo()
+    Gui.updateGui()
+    assert getattr(protected, name_property) == contour.name
+    doc.redo()
+    Gui.updateGui()
+    assert getattr(protected, name_property) == renamed.name
+    passed()
+
+    case = "reopening FCStd reconstructs layer display without persisting the derived name"
+    path = run_dir / "level-ui.FCStd"
+    name = protected.Name
+    doc.recompute()
+    doc.saveAs(str(path))
+    with ZipFile(path) as saved:
+        assert name_property.encode() not in saved.read("Document.xml")
+        assert levels.ELEMENT_LEVEL.encode() in saved.read("Document.xml")
+    App.closeDocument(doc.Name)
+    doc = None
+    doc = App.openDocument(str(path))
+    protected = doc.getObject(name)
+    select(protected)
+    assert getattr(protected, name_property) == renamed.name
+    assert levels.element_level_id(protected) == contour.identifier
+    assert renamed.name in label_at(protected)
+    passed()
+
+    case = "workbench change restores native Delete"
+    assert Gui.activateWorkbench("DraftWorkbench")
+    assert level_ui._controller is None
+    select(protected)
+    Gui.Command.get("Std_Delete").getAction()[0].trigger()
+    assert doc.getObject(name) is None
+    assert not window.isVisible()
+    passed()
+    report["status"] = "passed"
+except Exception:
+    report["cases"].append({"name": case, "status": "failed", "error": traceback.format_exc()})
+    traceback.print_exc()
+finally:
+    if doc is not None:
+        App.closeDocument(doc.Name)
+    with (run_dir / "RESULT.json").open("x", encoding="utf-8") as result:
+        json.dump(report, result, indent=2, ensure_ascii=False)
+        result.write("\n")
+
+print("UniStation level UI: " + report["status"], flush=True)
+sys.exit(0 if report["status"] == "passed" else 1)
