@@ -175,6 +175,11 @@ Available before or during drawing commands.</translation>
       <translation>Apply to document updates the drawing. Save exports the document palette.</translation>
     </message>
     <message>
+      <location filename="../gui.py" line="387" />
+      <source>Arc</source>
+      <translation>Arc</translation>
+    </message>
+    <message>
       <location filename="../arc.py" line="55" />
       <source>Arc creation failed: </source>
       <translation>Arc creation failed: </translation>
@@ -299,6 +304,11 @@ Available before or during drawing commands.</translation>
       <translation>Choose a point in the current compass plane.</translation>
     </message>
     <message>
+      <location filename="../wire.py" line="130" />
+      <source>Choose a point on the arc circle.</source>
+      <translation>Choose a point on the arc circle.</translation>
+    </message>
+    <message>
       <location filename="../plot.py" line="83" />
       <source>Choose a supported paper size.</source>
       <translation>Choose a supported paper size.</translation>
@@ -307,6 +317,16 @@ Available before or during drawing commands.</translation>
       <location filename="../attributes_gui.py" line="525" />
       <source>Choose a visible, thawed level to draw.</source>
       <translation>Choose a visible, thawed level to draw.</translation>
+    </message>
+    <message>
+      <location filename="../wire.py" line="116" />
+      <source>Choose an arc center different from the start in the current compass plane.</source>
+      <translation>Choose an arc center different from the start in the current compass plane.</translation>
+    </message>
+    <message>
+      <location filename="../wire.py" line="128" />
+      <source>Choose an arc end different from the start and center.</source>
+      <translation>Choose an arc end different from the start and center.</translation>
     </message>
     <message>
       <location filename="../attributes_gui.py" line="523" />
@@ -377,6 +397,11 @@ Available before or during drawing commands.</translation>
       <translation>Color: {}</translation>
     </message>
     <message>
+      <location filename="../gui.py" line="306" />
+      <source>Continue drawing</source>
+      <translation>Continue drawing</translation>
+    </message>
+    <message>
       <location filename="../coordinate_input.py" line="168" />
       <source>Coordinate input failed: {0}</source>
       <translation>Coordinate input failed: {0}</translation>
@@ -393,6 +418,11 @@ Available before or during drawing commands.</translation>
       <location filename="../levels_gui.py" line="143" />
       <source>Could not assign the level.</source>
       <translation>Could not assign the level.</translation>
+    </message>
+    <message>
+      <location filename="../gui.py" line="250" />
+      <source>Could not build a continuous wire.</source>
+      <translation>Could not build a continuous wire.</translation>
     </message>
     <message>
       <location filename="../change_attributes_gui.py" line="67" />
@@ -895,6 +925,11 @@ Available before or during drawing commands.</translation>
       <translation>Level: {}</translation>
     </message>
     <message>
+      <location filename="../gui.py" line="388" />
+      <source>Line</source>
+      <translation>Line</translation>
+    </message>
+    <message>
       <location filename="../line.py" line="44" />
       <source>Line creation failed: </source>
       <translation>Line creation failed: </translation>
@@ -1241,6 +1276,11 @@ Available before or during drawing commands.</translation>
       <location filename="../wire.py" line="50" />
       <source>Segment length must be finite.</source>
       <translation>Segment length must be finite.</translation>
+    </message>
+    <message>
+      <location filename="../gui.py" line="385" />
+      <source>Segment type</source>
+      <translation>Segment type</translation>
     </message>
     <message>
       <location filename="../levels_gui.py" line="126" />
@@ -1946,6 +1986,11 @@ Available before or during drawing commands.</translation>
       <location filename="../change_attributes_gui.py" line="118" />
       <source>Weight</source>
       <translation>Weight</translation>
+    </message>
+    <message>
+      <location filename="../wire.py" line="77" />
+      <source>Wire arc input failed: </source>
+      <translation>Wire arc input failed: </translation>
     </message>
     <message>
       <location filename="../wire.py" line="121" />

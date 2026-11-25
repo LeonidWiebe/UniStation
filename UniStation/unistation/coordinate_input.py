@@ -145,7 +145,7 @@ class CoordinateWindow(QtWidgets.QDialog):
         try:
             try:
                 if type(session) is WireSession:
-                    base = tuple(session.points[-1]) if session.points else None
+                    base = tuple(session.input_anchor()) if session.points else None
                 else:
                     base = tuple(session.first) if session.first is not None else None
                 point = App.Vector(*parse_point(self.coordinate_edit.text(), base))
@@ -158,7 +158,7 @@ class CoordinateWindow(QtWidgets.QDialog):
             if session.closed:
                 self.refresh()
                 return
-            if result is PointResult.ACCEPTED:
+            if result in (PointResult.ACCEPTED, PointResult.CREATED):
                 self.clear_entry()
             else:
                 self.coordinate_error.setText(session.last_error)

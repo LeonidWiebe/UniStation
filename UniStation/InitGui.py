@@ -7,6 +7,13 @@ class UniStationWorkbench(Gui.Workbench):
     # Class registration must not depend on helpers imported at file scope.
     ToolTip = "Draft geometry with AxisFlow coordinate input"
 
+    def __init__(self):
+        import os
+        import unistation
+        self.__class__.Icon = os.path.join(
+            os.path.dirname(unistation.__file__), "icons", "unistation.svg"
+        )
+
     def Initialize(self):
         from unistation.i18n import QT_TRANSLATE_NOOP, install, tr
         install()

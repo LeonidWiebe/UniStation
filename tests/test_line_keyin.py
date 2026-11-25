@@ -56,6 +56,7 @@ class LineKeyinTests(unittest.TestCase):
         self.assertEqual(self.backend.created, [])
 
     def test_second_keyin_point_creates_once_without_axisflow_sync(self):
+        self.session.continue_drawing = False
         self.assertIs(self.session.submit_point(Vector(1, 2, 3)),
                       PointResult.ACCEPTED)
         events_after_first = list(self.axisflow.events)
@@ -67,6 +68,19 @@ class LineKeyinTests(unittest.TestCase):
         self.assertEqual(len(self.backend.created), 1)
         self.assertTrue(self.session.closed)
         self.assertEqual(self.axisflow.ends, 1)
+
+    def test_continued_keyin_segment_synchronizes_axisflow_and_keeps_session(self):
+        self.session.submit_point(Vector(1, 2, 3))
+        self.axisflow.events.clear()
+
+        result = self.session.submit_point(Vector(4, 6, 3))
+
+        self.assertIs(result, PointResult.CREATED)
+        self.assertFalse(self.session.closed)
+        self.assertEqual((self.session.first.x, self.session.first.y, self.session.first.z), (4, 6, 3))
+        self.assertEqual(self.axisflow.events, [
+            ("confirm", (4, 6, 3)), ("setBasePoint", (4, 6, 3))])
+        self.assertEqual(len(self.backend.created), 1)
 
     def test_rejected_point_does_not_sync_or_replace_first_point(self):
         self.assertIs(self.session.submit_point(Vector(1, 2, 3)),
@@ -133,6 +147,7 @@ class LineKeyinTests(unittest.TestCase):
         self.assertTrue(self.session.closed)
 
     def test_callback_point_returns_explicit_result(self):
+        self.session.continue_drawing = False
         result = self.axisflow.callbacks["callback"](Vector(1, 2, 3), True)
         self.assertIs(result, PointResult.ACCEPTED)
 
@@ -143,7 +158,7 @@ class LineKeyinTests(unittest.TestCase):
         self.assertIs(result, PointResult.CREATED)
 
         result = self.axisflow.callbacks["callback"](Vector(3, 2, 3), True)
-        self.assertIs(result, PointResult.CLOSED)
+        self.assertIsNone(result)
 
     def test_confirm_failure_does_not_call_set_base_point(self):
         self.axisflow.fail_confirm = True

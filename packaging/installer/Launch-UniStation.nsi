@@ -7,6 +7,7 @@ AutoCloseWindow true
 SetCompressor /SOLID lzma
 Name "UniStation"
 OutFile "${OUTFILE}"
+Icon "${__FILEDIR__}\unistation.ico"
 VIProductVersion "${FILEVERSION}"
 VIAddVersionKey "ProductName" "UniStation launcher"
 VIAddVersionKey "FileVersion" "${FILEVERSION}"

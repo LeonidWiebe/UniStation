@@ -8,6 +8,7 @@ import FreeCADGui as Gui
 from PySide import QtCore, QtGui, QtWidgets
 from unistation.line import LineSession
 from unistation.wire import WireSession
+from unistation.wire_arc import xyz
 from unistation.circle import CircleSession
 from unistation.arc import ArcSession
 from unistation.transform import TransformSession
@@ -98,6 +99,7 @@ class Backend:
         self.coords = coin.SoCoordinate3()
         self.lines = coin.SoLineSet()
         self.lines.numVertices.setValue(0)
+        self._wire_guides = None
         self.node.addChild(color)
         if preview_pattern is not None or preview_width is not None:
             draw_style = coin.SoDrawStyle()
@@ -139,6 +141,9 @@ class Backend:
     def copy_point(self, point):
         return App.Vector(point)
 
+    def make_point(self, coordinates):
+        return App.Vector(*coordinates)
+
     def report(self, message):
         App.Console.PrintWarning("UniStation: " + message + "\n")
 
@@ -174,13 +179,80 @@ class Backend:
 
     def preview_wire(self, points, cursor):
         vertices = list(points) + ([cursor] if cursor is not None else [])
-        self.coords.point.setValues(0, len(vertices), [(p.x, p.y, p.z) for p in vertices])
-        self.lines.numVertices.setValue(len(vertices) if len(vertices) > 1 else 0)
+        self._preview_wire_vertices([xyz(point) for point in vertices])
+
+    def preview_mixed_wire(self, points, arcs, cursor, active_arc):
+        vertices = [xyz(points[0])]
+        ends = points[1:] + ([cursor] if cursor is not None else [])
+        for index, end in enumerate(ends):
+            arc = active_arc if index == len(points) - 1 else arcs.get(index)
+            if arc is not None:
+                vertices.extend(arc.frame.samples(arc.sweep)[1:-1])
+            vertices.append(xyz(end))
+        self._preview_wire_vertices(vertices)
+
+    def _preview_wire_vertices(self, vertices):
+        self._draw_polyline(self.coords, self.lines, vertices)
+        self.preview_wire_guides((), ())
+
+    @staticmethod
+    def _draw_polyline(coords, lines, vertices):
+        if len(vertices) > 1:
+            coords.point.setValues(0, len(vertices), vertices)
+            lines.numVertices.setValue(len(vertices))
+        else:
+            lines.numVertices.setValue(0)
+
+    def preview_wire_guides(self, circle, radii):
+        if self._wire_guides is None:
+            if not circle and not radii:
+                return
+            from pivy import coin
+
+            light = coin.SoBaseColor()
+            light.rgb = (0.9, 0.9, 0.9)
+            self._wire_guides = []
+            for color in (self.preview_color, light):
+                group = coin.SoSeparator()
+                style = coin.SoDrawStyle()
+                style.style = coin.SoDrawStyle.LINES
+                style.linePattern = _LINE_PATTERNS['Dashed']
+                style.lineWidth = 1.0
+                coords, lines = coin.SoCoordinate3(), coin.SoLineSet()
+                lines.numVertices.setValue(0)
+                for child in (color, style, coords, lines):
+                    group.addChild(child)
+                self.node.addChild(group)
+                self._wire_guides.append((coords, lines))
+        for (coords, lines), vertices in zip(self._wire_guides, (circle, radii)):
+            self._draw_polyline(coords, lines, list(vertices))
 
     def create_wire(self, points, closed):
         import Draft
         self.create_geometry(tr('UniStation Wire'), lambda: Draft.make_wire(
             points, closed=closed, face=False))
+
+    def create_mixed_wire(self, points, arcs, closed):
+        import Part
+
+        def make_wire():
+            ends = points[1:] + ([points[0]] if closed else [])
+            edges = []
+            for index, (start, end) in enumerate(zip(points, ends)):
+                arc = arcs.get(index)
+                if arc is None:
+                    edges.append(Part.makeLine(start, end))
+                else:
+                    middle = self.make_point(arc.frame.point_at(arc.sweep / 2))
+                    edges.append(self.arc_edge(start, middle, end))
+            wire = Part.Wire(edges)
+            if len(wire.Edges) != len(edges) or wire.isClosed() != closed:
+                raise RuntimeError(tr('Could not build a continuous wire.'))
+            obj = self.doc.addObject('Part::Feature', 'Wire')
+            obj.Shape = wire
+            return obj
+
+        self.create_geometry(tr('UniStation Wire'), make_wire)
 
     def create_geometry(self, title, factory):
         if not self.alive():
@@ -220,6 +292,7 @@ class Backend:
 
     def clear_preview(self):
         self.lines.numVertices.setValue(0)
+        self.preview_wire_guides((), ())
 
     def reset_input(self):
         self.clear_preview()
@@ -302,7 +375,24 @@ class Panel:
              QT_TRANSLATE_NOOP('UniStation', 'UniStation Wire') if wire else
              QT_TRANSLATE_NOOP('UniStation', 'UniStation Line'))
         layout = QtWidgets.QVBoxLayout(self.form)
+        if isinstance(session, LineSession):
+            check = bind(QtWidgets.QCheckBox(self.form), 'setText', 'Continue drawing')
+            check.setObjectName("unistation_continue_line")
+            check.setChecked(session.continue_drawing)
+            check.toggled.connect(self.set_continue_drawing)
+            layout.addWidget(check)
         if wire:
+            segment = bind(QtWidgets.QGroupBox(self.form), 'setTitle', 'Segment type')
+            segment_layout = QtWidgets.QHBoxLayout(segment)
+            arc_type = bind(QtWidgets.QRadioButton(segment), 'setText', 'Arc')
+            line_type = bind(QtWidgets.QRadioButton(segment), 'setText', 'Line')
+            arc_type.setObjectName('unistation_wire_arc')
+            line_type.setObjectName('unistation_wire_line')
+            line_type.setChecked(True)
+            arc_type.toggled.connect(session.set_arc_enabled)
+            segment_layout.addWidget(arc_type)
+            segment_layout.addWidget(line_type)
+            layout.addWidget(segment)
             for text, name, callback in (
                     (QT_TRANSLATE_NOOP('UniStation', 'Finish wire'), "unistation_finish_wire", session.finish),
                     (QT_TRANSLATE_NOOP('UniStation', 'Close contour'), "unistation_close_contour", session.close_contour)):
@@ -317,6 +407,9 @@ class Panel:
         reset_button.setAutoDefault(False)
         reset_button.clicked.connect(lambda: reset(expected=session, source="task"))
         layout.addWidget(reset_button)
+
+    def set_continue_drawing(self, checked):
+        self.session.continue_drawing = checked
 
     def reset_input(self):
         from unistation.coordinate_input import reset_for
@@ -366,6 +459,8 @@ def start(kind="line"):
         required += ("confirm", "setBasePoint")
     if kind in ("circle", "arc"):
         required += ("getCompassInfo",)
+    if kind == "wire":
+        required += ("getCompassInfo", "setMode")
     for name in required:
         if not callable(getattr(AxisFlow, name, None)):
             raise RuntimeError(tr('Incompatible AxisFlow: missing ') + name)

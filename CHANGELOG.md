@@ -1,5 +1,16 @@
 # Changes
 
+## v0.1.0-alpha.12 — 2026-11-25
+
+- Line continuation with AxisFlow origin transfer; mixed Line/Arc Wire geometry.
+- Floating toolbar width restored with an unavailable saved monitor.
+- Approved FreeCAD and Windows icons; setup download badge from 32 px.
+- Stop uninstall before AxisFlow on UniStation failure; default full removal
+  automatically sends backup data to the Recycle Bin.
+- Publish the unchanged alpha.12 EXE; prior feature checks passed, new package
+  installation smoke remains pending. No new tests/GUI during publication.
+
+
 ## v0.1.0-alpha.6 — 2026-11-20
 
 - Detect and validate FreeCAD, allow manual executable selection, and show the

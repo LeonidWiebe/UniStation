@@ -8,13 +8,15 @@ import sys
 import traceback
 import hashlib
 import os
+import uuid
 from pathlib import Path
 import FreeCAD as App
 import FreeCADGui as Gui
-from PySide import QtCore
+from PySide import QtCore, QtWidgets
 
 root = Path(__file__).resolve().parents[1]
-out = Path(os.environ.get("UNISTATION_TEST_OUTPUT", str(root / "test-output")))
+configured_output = os.environ.get("UNISTATION_TEST_OUTPUT")
+out = Path(configured_output) if configured_output else root / "tmp" / "test-runs" / f"smoke-{uuid.uuid4()}"
 out.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(root / "UniStation"))
 sys.path.insert(0, str(root / "tests"))
@@ -45,6 +47,9 @@ def run():
         assert AxisFlow.isActive()
         assert gui._session.backend.panel.getStandardButtons() is not None
         session = gui._session
+        continuation = session.backend.panel.form.findChild(QtWidgets.QCheckBox, "unistation_continue_line")
+        assert continuation.isChecked()
+        continuation.setChecked(False)
         session.point(App.Vector(1, 2, 3), True)
         session.move(App.Vector(4, 6, 3))
         session.point(App.Vector(4, 6, 3), True)

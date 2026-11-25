@@ -63,6 +63,9 @@ def run():
 
     def start():
         gui.start()
+        continuation = gui._session.backend.panel.form.findChild(
+            QtWidgets.QCheckBox, "unistation_continue_line")
+        continuation.setChecked(False)
         AF.setMode("rect")
         wait()
         assert gui._session is not None

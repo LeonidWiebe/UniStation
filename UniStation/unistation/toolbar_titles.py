@@ -378,11 +378,11 @@ class FloatingTitle(QtCore.QObject):
 
     def restore_rect(self, state):
         toolbar = self.toolbar
-        x, y, _width, height = state["rect"]
+        x, y, saved_width, height = state["rect"]
         screens = QtWidgets.QApplication.screens()
         screen = next((item for item in screens if item.name() == state["screen"]), None)
         if screen is None:
-            saved = QtCore.QRect(x, y, width, height)
+            saved = QtCore.QRect(x, y, saved_width, height)
             screen = max(screens, key=lambda item: _intersection_area(item.availableGeometry(), saved),
                          default=toolbar.screen())
         if screen is None:

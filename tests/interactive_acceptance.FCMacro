@@ -17,7 +17,8 @@ sys.path.insert(0, str(root / "tools"))
 sys.path.insert(0, str(root / "UniStation"))
 from acceptance import SnapshotWriter
 
-output_dir = Path(os.environ.get("UNISTATION_TEST_OUTPUT", root / "test-output"))
+configured_output = os.environ.get("UNISTATION_TEST_OUTPUT")
+output_dir = Path(configured_output) if configured_output else root / "tmp" / "test-runs" / f"interactive-{uuid.uuid4()}"
 output_dir.mkdir(parents=True, exist_ok=True)
 output = output_dir / "interactive-state.json"
 command = os.environ.get("UNISTATION_ACCEPTANCE_COMMAND", "line")

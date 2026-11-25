@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "version": "0.1.0-alpha.6",
-  "status": "prerelease-manual-install-launch-uninstall-smoke-passed-in-reported-scope",
+  "version": "0.1.0-alpha.12",
+  "status": "prerelease-alpha12-static-inspection-passed-installation-smoke-pending",
   "delivery": "NSIS Windows wizard; FreeCAD installed separately",
   "default_mod_directory": "%APPDATA%\\FreeCAD\\v1-1\\Mod",
   "platform": "Windows x86_64",
@@ -42,7 +42,7 @@
     "UniStation": "GPL-3.0-only",
     "AxisFlow": "LGPL-2.1-or-later"
   },
-  "new_installation_tested": true,
+  "new_installation_tested": false,
   "binary_rebuilt": false,
   "product_source": "current checkout UniStation/; per-file SHA-256 in build manifest",
   "manual_acceptance": {
@@ -53,5 +53,10 @@
     "full_regression_claimed": false,
     "forced_failure_recovery_verified": false,
     "new_automated_run": false
+  },
+  "installer_acceptance": {
+    "alpha.11": "Manual check passed on 2026-11-24 in the recorded scope",
+    "alpha.12": "Fresh EXE installation/installed-feature smoke pending",
+    "full_regression": false
   }
 }

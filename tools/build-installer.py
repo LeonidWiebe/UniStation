@@ -37,7 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--makensis', type=Path, required=True)
     parser.add_argument('--payload-archive', type=Path)
-    parser.add_argument('--output-dir', type=Path, default=ROOT / 'dist/installer-build')
+    parser.add_argument('--output-dir', type=Path, default=Path('C:/projects/ustatic/dist/installer-build'))
     args = parser.parse_args()
     config = json.loads((ROOT / 'packaging/installer/config.json').read_text(encoding='utf-8'))
     archive_path = args.payload_archive or ROOT / config['input_archive']
@@ -129,6 +129,7 @@ def main():
     own_sources = {name: (ROOT / name).read_bytes() for name in [
         'packaging/installer/UniStation.nsi', 'packaging/installer/FreeCAD.nsh',
         'packaging/installer/Launch-UniStation.nsi', 'packaging/installer/Start-UniStation.FCMacro',
+        'packaging/installer/unistation.ico', 'packaging/installer/unistation-setup.ico',
         'packaging/installer/config.json',
         'packaging/installer/USER-GUIDE.md', 'packaging/installer/USER-CHECK.md',
         'packaging/installer/BUILD.md', 'tools/build-installer.py', 'LICENSE',

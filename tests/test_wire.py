@@ -1,3 +1,4 @@
+import math
 import unittest
 from types import SimpleNamespace
 from test_line import Backend, Vector
@@ -9,11 +10,29 @@ class WireBackend(Backend):
     def preview_wire(self, points, cursor):
         self.preview_points = list(points)
         self.preview_cursor = cursor
+        self.active_arc = None
+        self.guides = (), ()
+
+    def make_point(self, point):
+        return Vector(*point)
+
+    def preview_mixed_wire(self, points, arcs, cursor, active_arc):
+        self.preview_wire(points, cursor)
+        self.active_arc = active_arc
+
+    def preview_wire_guides(self, circle, radii):
+        self.guides = circle, radii
+
+    def reset_input(self):
+        self.preview_wire([], None)
 
     def create_wire(self, points, closed):
         if self.fail:
             raise RuntimeError("injected failure")
         self.created.append((list(points), closed))
+
+    def create_mixed_wire(self, points, arcs, closed):
+        self.created.append((list(points), dict(arcs), closed))
 
 
 class WireTests(unittest.TestCase):
@@ -101,6 +120,7 @@ class AxisFlow:
         self.fail_confirm = False
         self.fail_base = False
         self.ends = 0
+        self.mode = 'rect'
 
     def getPoint(self, **callbacks):
         self.callbacks = callbacks
@@ -123,9 +143,103 @@ class AxisFlow:
     def endSession(self):
         self.ends += 1
 
+    def getCompassInfo(self):
+        return {'mode': self.mode, 'planeN': (0, 0, 1)}
+
+    def setMode(self, mode):
+        self.mode = mode
+
 
 def coordinates(points):
     return [(point.x, point.y, point.z) for point in points]
+
+
+class WireArcTests(unittest.TestCase):
+    def setUp(self):
+        self.backend = WireBackend()
+        self.axisflow = AxisFlow()
+        self.session = WireSession(self.backend, self.axisflow)
+        self.session.start()
+        self.session.point(Vector(0), True)
+        self.session.point(Vector(10), True)
+        self.session.set_arc_enabled(True)
+
+    def test_previews_circle_then_arc_and_uses_projected_end(self):
+        self.session.move(Vector(10, 5))
+        circle, radii = self.backend.guides
+        self.assertEqual(circle[0], (10, 0, 0))
+        self.assertEqual(radii, ((10, 0, 0), (10, 5, 0)))
+
+        self.assertIs(self.session.point(Vector(10, 5), True), PointResult.ACCEPTED)
+        self.assertEqual(self.axisflow.mode, 'polar')
+        self.assertEqual(len(self.session.points), 2)
+        self.session.move(Vector(20, 5))
+        self.assertEqual(self.backend.guides, ((), ((10, 0, 0), (10, 5, 0), (15, 5, 0))))
+        self.assertAlmostEqual(self.backend.active_arc.sweep, math.pi / 2)
+
+        self.assertIs(self.session.point(Vector(20, 5), True), PointResult.ACCEPTED)
+        self.assertEqual(self.axisflow.mode, 'rect')
+        self.assertEqual(self.axisflow.events[-1], ('setBasePoint', (15, 5, 0)))
+        self.assertEqual(self.backend.created, [])
+        self.assertIs(self.session.finish(), PointResult.CREATED)
+        points, arcs, closed = self.backend.created[0]
+        self.assertEqual(coordinates(points), [(0, 0, 0), (10, 0, 0), (15, 5, 0)])
+        self.assertAlmostEqual(arcs[1].sweep, math.pi / 2)
+        self.assertFalse(closed)
+
+    def test_switch_to_line_discards_center_and_rearms_at_previous_vertex(self):
+        self.axisflow.mode = 'polar'
+        self.session.point(Vector(10, 5), True)
+        old = self.axisflow.callbacks['callback']
+        self.session.move(Vector(16, 5))
+
+        self.session.set_arc_enabled(False)
+
+        self.assertEqual(self.axisflow.mode, 'polar')
+        self.assertIs(self.axisflow.callbacks['last'], self.session.points[-1])
+        self.assertIsNone(self.session.arc_frame)
+        self.assertIsNone(old(Vector(20), True))
+        self.assertEqual(self.backend.guides, ((), ()))
+        self.assertEqual(coordinates([self.backend.preview_cursor]), [(16, 5, 0)])
+        self.assertIs(self.session.point(Vector(16, 5), True), PointResult.ACCEPTED)
+        self.assertIs(self.session.finish(), PointResult.CREATED)
+        points, closed = self.backend.created[0]
+        self.assertEqual(coordinates(points)[-1], (16, 5, 0))
+        self.assertFalse(closed)
+
+    def test_major_arc_follows_sweep_through_half_turn(self):
+        self.session.point(Vector(0), True)
+        for point in (Vector(0, 10), Vector(-10), Vector(0, -10)):
+            self.session.move(point)
+        self.assertIs(self.session.point(Vector(0, -10), True), PointResult.ACCEPTED)
+        self.assertAlmostEqual(self.session.arcs[1].sweep, 3 * math.pi / 2)
+
+    def test_center_and_endpoint_validation_and_reset(self):
+        self.assertIs(self.session.point(Vector(10, 5, 1), True), PointResult.REJECTED)
+        self.assertIs(self.session.point(Vector(10, 5), True), PointResult.ACCEPTED)
+        self.assertEqual(coordinates([self.session.input_anchor()]), [(10, 5, 0)])
+        self.assertIs(self.session.point(Vector(10, 5), True), PointResult.REJECTED)
+        self.assertEqual(self.axisflow.mode, 'polar')
+
+        self.session.reset_step()
+
+        self.assertEqual(self.axisflow.mode, 'rect')
+        self.assertEqual(coordinates(self.session.points), [(0, 0, 0), (10, 0, 0)])
+        self.assertIs(self.axisflow.callbacks['last'], self.session.points[-1])
+
+    def test_end_at_first_vertex_keeps_closing_arc(self):
+        self.session.set_arc_enabled(False)
+        self.session.point(Vector(10, 10), True)
+        self.session.set_arc_enabled(True)
+        self.session.point(Vector(10, 0), True)
+
+        self.assertIs(self.session.point(Vector(0), True), PointResult.CREATED)
+
+        points, arcs, closed = self.backend.created[0]
+        self.assertEqual(len(points), 3)
+        self.assertAlmostEqual(arcs[2].sweep, math.pi / 2)
+        self.assertTrue(closed)
+        self.assertEqual(self.axisflow.mode, 'rect')
 
 
 class WireResultTests(unittest.TestCase):
@@ -134,6 +248,16 @@ class WireResultTests(unittest.TestCase):
         self.axisflow = AxisFlow()
         self.session = WireSession(self.backend, self.axisflow)
         self.session.start()
+
+    def test_arc_keyin_uses_exact_points_on_the_circle(self):
+        self.session.point(Vector(10), True)
+        self.session.set_arc_enabled(True)
+        self.assertIs(self.session.submit_point(Vector(10, 5)), PointResult.ACCEPTED)
+        self.assertIs(self.session.submit_point(Vector(20, 5)), PointResult.REJECTED)
+        self.assertEqual(len(self.session.points), 1)
+        self.assertIs(self.session.submit_point(Vector(15, 5)), PointResult.ACCEPTED)
+        self.assertEqual(self.axisflow.events[-2:], [
+            ('confirm', (15, 5, 0)), ('setBasePoint', (15, 5, 0))])
 
     def test_accepted_points_are_copied_and_not_created_before_finish(self):
         first = Vector(1, 2, 3)

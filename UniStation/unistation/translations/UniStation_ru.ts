@@ -175,6 +175,11 @@ Available before or during drawing commands.</source>
       <translation>«Применить к документу» обновляет чертёж. «Сохранить» выгружает палитру документа в файл.</translation>
     </message>
     <message>
+      <location filename="../gui.py" line="387" />
+      <source>Arc</source>
+      <translation>Дуга</translation>
+    </message>
+    <message>
       <location filename="../arc.py" line="55" />
       <source>Arc creation failed: </source>
       <translation>Не удалось создать дугу: </translation>
@@ -299,6 +304,11 @@ Available before or during drawing commands.</source>
       <translation>Укажите точку в текущей плоскости компаса.</translation>
     </message>
     <message>
+      <location filename="../wire.py" line="130" />
+      <source>Choose a point on the arc circle.</source>
+      <translation>Укажите точку на окружности дуги.</translation>
+    </message>
+    <message>
       <location filename="../plot.py" line="83" />
       <source>Choose a supported paper size.</source>
       <translation>Выберите формат листа из списка.</translation>
@@ -307,6 +317,16 @@ Available before or during drawing commands.</source>
       <location filename="../attributes_gui.py" line="525" />
       <source>Choose a visible, thawed level to draw.</source>
       <translation>Для рисования выберите видимый и размороженный слой.</translation>
+    </message>
+    <message>
+      <location filename="../wire.py" line="116" />
+      <source>Choose an arc center different from the start in the current compass plane.</source>
+      <translation>Укажите центр дуги в текущей плоскости компаса, отличный от её начала.</translation>
+    </message>
+    <message>
+      <location filename="../wire.py" line="128" />
+      <source>Choose an arc end different from the start and center.</source>
+      <translation>Укажите конец дуги, отличный от начала и центра.</translation>
     </message>
     <message>
       <location filename="../attributes_gui.py" line="523" />
@@ -377,6 +397,11 @@ Available before or during drawing commands.</source>
       <translation>Цвет: {}</translation>
     </message>
     <message>
+      <location filename="../gui.py" line="306" />
+      <source>Continue drawing</source>
+      <translation>Продолжать выполнение</translation>
+    </message>
+    <message>
       <location filename="../coordinate_input.py" line="168" />
       <source>Coordinate input failed: {0}</source>
       <translation>Ошибка ввода координат: {0}</translation>
@@ -393,6 +418,11 @@ Available before or during drawing commands.</source>
       <location filename="../levels_gui.py" line="143" />
       <source>Could not assign the level.</source>
       <translation>Не удалось назначить слой.</translation>
+    </message>
+    <message>
+      <location filename="../gui.py" line="250" />
+      <source>Could not build a continuous wire.</source>
+      <translation>Не удалось построить непрерывную составную линию.</translation>
     </message>
     <message>
       <location filename="../change_attributes_gui.py" line="67" />
@@ -895,6 +925,11 @@ Available before or during drawing commands.</source>
       <translation>Слой: {}</translation>
     </message>
     <message>
+      <location filename="../gui.py" line="388" />
+      <source>Line</source>
+      <translation>Линия</translation>
+    </message>
+    <message>
       <location filename="../line.py" line="44" />
       <source>Line creation failed: </source>
       <translation>Не удалось создать отрезок: </translation>
@@ -1241,6 +1276,11 @@ Available before or during drawing commands.</source>
       <location filename="../wire.py" line="50" />
       <source>Segment length must be finite.</source>
       <translation>Длина сегмента должна быть конечным числом.</translation>
+    </message>
+    <message>
+      <location filename="../gui.py" line="385" />
+      <source>Segment type</source>
+      <translation>Тип сегмента</translation>
     </message>
     <message>
       <location filename="../levels_gui.py" line="126" />
@@ -1946,6 +1986,11 @@ Available before or during drawing commands.</source>
       <location filename="../change_attributes_gui.py" line="118" />
       <source>Weight</source>
       <translation>Толщина</translation>
+    </message>
+    <message>
+      <location filename="../wire.py" line="77" />
+      <source>Wire arc input failed: </source>
+      <translation>Не удалось задать дуговой сегмент: </translation>
     </message>
     <message>
       <location filename="../wire.py" line="121" />

@@ -1,31 +1,38 @@
-# Windows installer v0.1.0-alpha.6
+# Windows installer alpha.12
 
-[Download setup](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.6/UniStation-0.1.0-alpha.6-win64-setup.exe) · [Release notes](release-v0.1.0-alpha.6.md).
+[Download setup](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.12/UniStation-0.1.0-alpha.12-win64-setup.exe) · [Release notes](release-v0.1.0-alpha.12.md).
 
-Close FreeCAD and run setup under the Windows account you will use for work.
-Confirm the detected FreeCAD.exe or browse to it. If none is found, choose a
-manual path or exit and install FreeCAD first. The accepted package range is
-FreeCAD 1.1.1–1.1.4, Windows x64 / Python 3.11. Version/file checks do not prove
-every ABI combination. FreeCAD is not bundled or downloaded automatically.
+Close FreeCAD and run setup under the Windows account used for CAD work.
+Confirm the detected FreeCAD.exe or browse to it. Setup checks the version,
+64-bit executable and Python 3.11 files. Supported range: FreeCAD 1.1.1–1.1.4.
+FreeCAD is not bundled or downloaded automatically.
 
-Select UniStation/AxisFlow and optional documentation/shortcuts, then a parent
-directory named **Mod**. Default: `%APPDATA%\FreeCAD\v1-1\Mod`.
-Existing selected module folders are retained in same-volume transactions.
-If UniStation is selected without AxisFlow, a compatible AxisFlow must already
-be present in that Mod. The desktop and Start menu **UniStation - FreeCAD**
-shortcuts open the configured FreeCAD with UniStation active; create/open a
-document afterwards. The launcher uses this installation's data directory for
-the child process and keeps the current account's preferences.
+Choose UniStation, AxisFlow and optional documentation/shortcuts. Select the
+**parent Mod directory**; default `%APPDATA%\FreeCAD\v1-1\Mod`.
+Both main components are selected by default. UniStation alone requires a
+compatible existing AxisFlow in that Mod. Use **UniStation - FreeCAD** on the
+desktop or Start menu to open the configured FreeCAD with the workbench active.
+The launcher sets the data directory for its child process, without resetting
+the account's preferences. Ordinary FreeCAD launch also allows manual selection.
 
-Alpha.6 fixes the uninstaller's original-directory lookup. Upgrade alpha.5 into
-the same Mod before retrying uninstall. Ownership checks remain enabled;
-uninstall processes selected managed components and retains retired files and
-backups, without recursively deleting the shared Mod or resetting FreeCAD.
+## Upgrade and removal
 
-Manual installation/launch and the alpha.6 uninstall retest passed in the
-reported scope. Full regression, forced failure recovery and every component
-combination remain outside that acceptance. The EXE is unsigned.
+Close FreeCAD before upgrading in the same Mod. Existing selected components
+are retained in installer transactions. To change Mod, first remove the managed
+components from the old location. Unchecking a setup component skips it rather
+than uninstalling it.
 
-[Detailed RU/EN guide](../packaging/installer/USER-GUIDE.md) ·
-[Manual check](../packaging/installer/USER-CHECK.md) ·
+Use Windows Apps or the uninstall shortcut. Both managed components are selected
+by default. A UniStation removal error stops processing before AxisFlow.
+Partial removal retains service state. After the last component is removed,
+`.UniStation-Installer` is moved out of Mod and sent to the Recycle Bin
+automatically, including with /S; there is no extra confirmation or success
+message. Cleanup errors identify the remaining path. A failed move leaves
+the service folder in Mod. Drawings and FreeCAD preferences are not reset.
+
+The alpha.11 installer passed a manual check in the recorded scope. A short
+installation/installed-feature check of alpha.12 is still pending. The EXE is
+unsigned; full regression, silent mode and forced recovery are not certified.
+[Detailed guide](../packaging/installer/USER-GUIDE.md) ·
+[Check](../packaging/installer/USER-CHECK.md) ·
 [Build](../packaging/installer/BUILD.md).

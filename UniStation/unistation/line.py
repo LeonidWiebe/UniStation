@@ -1,4 +1,4 @@
-"""Two-point command lifecycle, independent of Qt and input implementation."""
+"""Single or chained Draft line placement, independent of Qt."""
 
 from unistation.i18n import tr
 import math
@@ -15,7 +15,10 @@ class PointResult(Enum):
 
 
 class LineSession(InputSession):
-    last_error = ""
+    def __init__(self, backend, axisflow, origin=None):
+        super().__init__(backend, axisflow, origin)
+        self.continue_drawing = True
+        self.last_error = ""
 
     def reject_point(self, message):
         self.last_error = message
@@ -43,11 +46,15 @@ class LineSession(InputSession):
         except Exception as exc:
             self.last_error = tr('Line creation failed: ') + str(exc)
             self.backend.report(self.last_error)
-            return PointResult.FAILED
-        else:
-            return PointResult.CREATED
-        finally:
             self.cancel()
+            return PointResult.FAILED
+        if not self.continue_drawing:
+            self.cancel()
+        elif self.valid():
+            self.first = self.backend.copy_point(point)
+            self.accepted_input()
+            self.move(None)
+        return PointResult.CREATED
 
     def submit_point(self, point):
         """Accept explicit world coordinates and synchronize only a live session."""
@@ -57,7 +64,7 @@ class LineSession(InputSession):
             self.cancel()
             return PointResult.CLOSED
         result = self.point(point, True)
-        if result is PointResult.ACCEPTED and not self.closed:
+        if result in (PointResult.ACCEPTED, PointResult.CREATED) and not self.closed:
             try:
                 self.axisflow.confirm(point)
                 self.axisflow.setBasePoint(point)
@@ -71,7 +78,10 @@ class LineSession(InputSession):
     def move(self, point):
         if self.valid() and self.first is not None:
             try:
-                self.backend.preview(self.first, point)
+                if point is None:
+                    self.backend.clear_preview()
+                else:
+                    self.backend.preview(self.first, point)
             except Exception as exc:
                 self.backend.report(tr('Preview failed: ') + str(exc))
                 self.cancel()

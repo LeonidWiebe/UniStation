@@ -20,7 +20,8 @@ root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / "UniStation"))
 sys.path.insert(0, str(root / "tests"))
 import gui_diagnostics
-output_dir = Path(os.environ.get("UNISTATION_TEST_OUTPUT", str(root / "test-output")))
+configured_output = os.environ.get("UNISTATION_TEST_OUTPUT")
+output_dir = Path(configured_output) if configured_output else root / "tmp" / "test-runs" / f"qt-{uuid.uuid4()}"
 output_dir.mkdir(parents=True, exist_ok=True)
 output = output_dir / "qt-input.json"
 results = {"freecad": App.Version(), "method": "QtTest events, no point injection",
@@ -243,27 +244,61 @@ def run():
     def points(obj):
         return [list(v.Point) for v in obj.Shape.Vertexes]
 
+    def geometry_objects(doc, expected_count):
+        objects = [obj for obj in doc.Objects if obj.isDerivedFrom("Part::Feature")]
+        assert len(objects) == expected_count, (expected_count, [(obj.Name, obj.TypeId) for obj in doc.Objects])
+        return objects
+
     def equal(actual, expected):
         assert len(actual) == len(expected), (actual, expected)
         for a, e in zip(actual, expected):
             assert (App.Vector(*a) - App.Vector(*e)).Length < 1e-6, (actual, expected)
 
-    def start():
+    def start(*, continue_drawing=False):
         gui.start()
+        continuation = gui._session.backend.panel.form.findChild(
+            QtWidgets.QCheckBox, "unistation_continue_line")
+        assert continuation.isChecked()
+        continuation.setChecked(continue_drawing)
         AF.setMode("rect")
         frame(False)
         wait()
+        return continuation
 
     def numeric(doc):
-        start()
+        continuation = start(continue_drawing=True)
         enter((1, 2, 3))
         action("ConfirmPoint")
         assert gui._session.first is not None
         enter((-4.5, 6.25, 0))
         action("ConfirmPoint")
-        equal(points(doc.Objects[0]), [[1, 2, 3], [-3.5, 8.25, 3]])
+        first_line, = geometry_objects(doc, 1)
+        first = points(first_line)
+        equal(first, [[1, 2, 3], [-3.5, 8.25, 3]])
+        session = gui._session
+        assert session is not None and AF.isActive()
+        compass_origin = list(AF.getState()["origin"])
+        equal([list(session.first), compass_origin], [first[-1], first[-1]])
+
+        mouse_at(App.Vector(5, 12, 0))
+        backend = session.backend
+        assert int(backend.lines.numVertices[0]) == 2
+        vertices = backend.coords.point.getValues()
+        preview = [[float(vertices[i][j]) for j in range(3)] for i in range(2)]
+        equal([preview[0]], [first[-1]])
+        assert (App.Vector(*preview[1]) - App.Vector(*preview[0])).Length > 1e-6, preview
+        geometry_objects(doc, 1)
+
+        frame(True)
+        continuation.setChecked(False)
+        enter((8, 9, 3))
+        action("ConfirmPoint")
         assert gui._session is None and not AF.isActive()
-        return points(doc.Objects[0])
+        unchanged, second_line = geometry_objects(doc, 2)
+        assert unchanged is first_line
+        second = points(second_line)
+        equal(second, [first[-1], [8, 9, 3]])
+        return {"segments": [first, second], "compass_origin": compass_origin, "preview": preview}
 
     def world(doc):
         start()
@@ -924,12 +959,14 @@ def run():
         mouse_at(App.Vector(-10, -5, 0), True)
         assert gui._session.first is not None
         mouse_at(App.Vector(10, 5, 0), True)
-        assert gui._session is None and len(doc.Objects) == 1
+        assert gui._session is None and not AF.isActive()
+        line, = geometry_objects(doc, 1)
+        vertices = points(line)
+        assert len(vertices) == 2, vertices
         # Screen projection is quantized to pixels.
-        for actual, target in zip(doc.Objects[0].Shape.Vertexes,
-                                  (App.Vector(-10, -5, 0), App.Vector(10, 5, 0))):
-            assert (actual.Point - target).Length < 1, points(doc.Objects[0])
-        return points(doc.Objects[0])
+        for actual, target in zip(vertices, (App.Vector(-10, -5, 0), App.Vector(10, 5, 0))):
+            assert (App.Vector(*actual) - target).Length < 1, vertices
+        return vertices
 
     def endpoint_snap(doc):
         import Draft
@@ -1923,6 +1960,49 @@ def run():
         QTest.mouseClick(button, QtCore.Qt.LeftButton)
         wait()
 
+    def wire_center_arc(doc):
+        import Part
+
+        doc.UndoMode = 1
+        wire_start()
+        session = gui._session
+        backend = session.backend
+        arc = backend.panel.form.findChild(QtWidgets.QRadioButton, 'unistation_wire_arc')
+        line = backend.panel.form.findChild(QtWidgets.QRadioButton, 'unistation_wire_line')
+        assert line.isChecked()
+        wire_points(((0, 0, 0), (10, 0, 0)))
+        QTest.mouseClick(arc, QtCore.Qt.LeftButton)
+        mouse_at(App.Vector(10, 5, 0))
+        (_, circle_lines), (_, radius_lines) = backend._wire_guides
+        assert circle_lines.numVertices[0] > 2 and radius_lines.numVertices[0] == 2
+
+        wire_points(((0, 5, 0),))
+        assert AF.getMode() == 'polar'
+        equal([list(AF.getState()['origin'])], [[10, 5, 0]])
+        mouse_at(App.Vector(20, 5, 0))
+        assert circle_lines.numVertices[0] == 0 and radius_lines.numVertices[0] == 3
+        assert backend.lines.numVertices[0] > 3 and len(session.points) == 2
+        wire_points(((5, 0, 0),))
+        assert AF.getMode() == 'rect' and arc.isChecked()
+        equal([list(session.points[-1]), list(AF.getState()['origin'])], [[15, 5, 0]] * 2)
+
+        wire_points(((0, 5, 0),))
+        assert AF.getMode() == 'polar'
+        QTest.mouseClick(line, QtCore.Qt.LeftButton)
+        assert AF.getMode() == 'rect' and session.arc_frame is None
+        equal([list(AF.getState()['origin'])], [[15, 5, 0]])
+        wire_points(((5, 0, 0),))
+        assert not doc.Objects
+        wire_button('unistation_finish_wire')
+        obj, = geometry_objects(doc, 1)
+        assert not AF.isActive() and gui._session is None
+        edges = obj.Shape.Edges
+        arcs = [edge for edge in edges if isinstance(edge.Curve, Part.Circle)]
+        assert len(edges) == 3 and len(arcs) == 1 and len(obj.Shape.Faces) == 0
+        assert abs(arcs[0].Curve.Radius - 5) < 1e-6
+        equal([list(arcs[0].Curve.Center)], [[10, 5, 0]])
+        return {"vertices": points(obj), "arc_radius": arcs[0].Curve.Radius}
+
     def wire_open(doc):
         doc.UndoMode = 1
         wire_start()
@@ -2686,6 +2766,7 @@ def run():
              ("circle_mouse_endpoint_snap", circle_mouse), ("circle_lifecycle", circle_lifecycle),
              ("circle_rollback", circle_failure),
              ("wire_open_undo_save", wire_open), ("wire_closed_button", wire_closed),
+             ("wire_center_arc", wire_center_arc),
              ("wire_closed_first_point_world", wire_pick_first), ("wire_cancel", wire_cancel),
              ("wire_mouse_endpoint_snap", wire_mouse_snap),
              ("wire_insufficient_points", wire_short), ("wire_tilted_plane", wire_plane),

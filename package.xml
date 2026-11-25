@@ -2,8 +2,8 @@
 <package xmlns="https://wiki.freecad.org/Package_Metadata" format="1">
   <name>UniStation</name>
   <description>Experimental drafting workbench with AxisFlow point input.</description>
-  <version>0.1.0-alpha.6</version>
-  <date>2026-11-20</date>
+  <version>0.1.0-alpha.12</version>
+  <date>2026-11-25</date>
   <maintainer>UniStation contributors</maintainer>
   <license file="LICENSE">GPL-3.0-only</license>
   <url type="repository" branch="main">https://github.com/LeonidWiebe/UniStation</url>

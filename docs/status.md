@@ -1,6 +1,12 @@
-# Current status — 20 November 2026
+# Current status — 25 November 2026
 
-Alpha.6 updates the installer, FreeCAD detection and startup shortcut; product runtime remains as in alpha.4. [Release notes](release-v0.1.0-alpha.6.md).
+Alpha.12 is the published prerelease, with Line continuation and exact circular
+Wire segments, toolbar-width restoration, FreeCAD/Windows icons and updated
+uninstall behavior. [Release notes](release-v0.1.0-alpha.12.md).
+
+Line and Wire feature checks passed in the recorded targeted/manual scope.
+The prior alpha.11 installer has manual acceptance; the new alpha.12 EXE still
+needs its own installation/installed-feature smoke check. [Testing](testing.md).
 
 Implemented: drawing and supported whole-object Move/Copy, FCStd layers and
 modeless manager, assignment, persistent ByLayer attributes, Global Display /
@@ -9,7 +15,7 @@ Global Freeze, Lock in supported UniStation operations, Plot, Change Attributes,
 Five toolbars, English/Russian UI, shared Draft/AxisFlow snaps and live attributes.
 
 Recent targeted checks used FreeCAD 1.1.4. Earlier product functionality was
-tested in 1.1.1; alpha.4 has not received a complete 1.1.1 regression. Feature
+tested in 1.1.1; alpha.12 has not received a complete 1.1.1 regression. Feature
 acceptance, static package inspection and installer execution are separate.
 [Testing](testing.md).
 
@@ -19,12 +25,12 @@ acceptance, static package inspection and installer execution are separate.
 | --- | --- |
 | Layers | Protection outside UniStation, per-view visibility and external layer libraries are deferred. Lock applies to supported operations, not arbitrary FreeCAD tools. |
 | PDF | Supported planar XY geometry only; direct vector output respects Plot/Global Freeze. TechDraw integration is deferred. |
-| Drawing / transforms | Rectangle/Freeform and Scale/Rotate/Mirror/Array are disabled. Move/Copy require supported preselected whole objects. Wire arc segments are deferred. |
+| Drawing / transforms | Rectangle/Freeform and Scale/Rotate/Mirror/Array are disabled. Move/Copy require supported preselected whole objects. |
 | Circle lifecycle / AF-002 | Historical native access violation during lifecycle checks remains unresolved; ownership was not established. Finish/cancel Circle before switching documents/workbenches as a precaution, not a proven fix. |
 | Reset / key-in | Corrected right-click Reset has no separate complete acceptance; earlier coordinate-entry/focus scenarios remain open. AxisFlow is primary point input. |
 | Palette / Locate | Earlier Undo/failure/read-only, JSON validation and compound-click observations remain recorded; publication does not establish their resolution. |
 | TEST-003/004 | Legacy GUI assertions/doubles require separate work. Publishing them is not evidence of passing. |
-| Installation | Manual installation/launch and the alpha.6 uninstall retest passed in the reported scope. Complete regression and forced failure recovery are not certified. EXE is unsigned; Addon Manager delivery is not provided. |
+| Installation | Alpha.6 installation/launch/uninstall and alpha.11 installer manual checks passed in their recorded scope. The new alpha.12 package smoke remains pending. Complete regression and forced failure recovery are not certified. EXE is unsigned; Addon Manager delivery is not provided. |
 
 Next work is local project configuration and search paths, then external layer
 libraries. Cells/shared cells, a references manager and saved views are planned.

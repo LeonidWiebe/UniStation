@@ -99,7 +99,7 @@ def prepare(root):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output-dir', type=Path, default=ROOT / 'dist')
+    parser.add_argument('--output-dir', type=Path, default=Path('C:/projects/ustatic/dist'))
     args = parser.parse_args()
     version, files = prepare(ROOT)
     output = args.output_dir.resolve()

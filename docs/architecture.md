@@ -9,7 +9,7 @@ InitGui.py: commands, menus, five toolbars, activation/teardown
   gui.py: FreeCAD/Qt adapter, Coin preview, document/view guards
     InputSession: AxisFlow ownership, callbacks, generations, cleanup
       LineSession / WireSession / PlanarSession(Circle, Arc) / TransformSession
-    Draft / Part geometry -> one document transaction at completion
+    Draft / Part geometry -> document transactions for confirmed geometry
 ```
 
 ## Input and geometry
@@ -23,8 +23,18 @@ its three accepted world points, including after compass rotation.
 
 Preview uses Coin nodes, not document geometry. Circle uses a 128-segment
 display preview; final Circle/Arc geometry is exact Draft/Part geometry.
-Line/Circle commit after two valid points; Arc after three; Wire on explicit
-finish/close. Move/Copy defer the commit to the next Qt event cycle.
+Line commits each segment separately. The continuation option keeps its
+session active and uses the endpoint for the next preview and compass origin.
+Circle commits after two valid points and Arc after three. Wire commits all
+accepted segments together on finish or close. Move/Copy defer the commit to
+the next Qt event cycle.
+
+Wire stores accepted vertices and the circular segments that join them.
+`wire_arc.py` computes each arc in the compass plane at center confirmation.
+Wire temporarily switches AxisFlow to polar mode while placing the endpoint.
+Straight-only Wire uses Draft. A Wire with arcs is one `Part::Feature` whose
+`Part.Wire` holds exact straight and circular edges. Separate Coin nodes
+display the temporary circle and guide radii.
 
 Transactions encompass geometry creation and new-object indexed attributes.
 Failures abort the transaction. Post-commit result selection is a separate UI
@@ -52,8 +62,10 @@ can change existing supported objects. levels.py and element_attributes.py store
 
 InitGui регистрирует команды и панели. `gui.py` связывает FreeCAD/Qt/Coin с
 сессиями, независимыми от GUI. InputSession владеет вводом AxisFlow, поколением
-callbacks и освобождением ресурсов. Предпросмотр не создаёт объекты документа;
-геометрия создаётся штатными Draft/Part в одной транзакции при завершении.
+callbacks и освобождением ресурсов. Предпросмотр существует в сцене Coin.
+Line создаёт каждый отрезок отдельной транзакцией. Wire сохраняет все
+принятые сегменты одной транзакцией при завершении. Смешанная линия состоит
+из прямых и точных круговых рёбер Part.
 
 Circle/Arc читают текущее состояние компаса. Принятые мировые точки Arc
 сохраняются. Живые атрибуты обновляют Coin, затем перечитываются перед commit.

@@ -2,7 +2,7 @@
 
 ## Windows installer — recommended
 
-Download the [alpha.6 setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.6/UniStation-0.1.0-alpha.6-win64-setup.exe) and close FreeCAD.
+Download the [alpha.12 setup executable](https://github.com/LeonidWiebe/UniStation/releases/download/v0.1.0-alpha.12/UniStation-0.1.0-alpha.12-win64-setup.exe) and close FreeCAD.
 Use the same Windows account for setup and work. Confirm the detected FreeCAD
 or choose its EXE, then select components and a directory named **Mod**.
 Default: `%APPDATA%\FreeCAD\v1-1\Mod`. Use **UniStation - FreeCAD** from
@@ -10,10 +10,17 @@ the desktop or Start menu to open the configured FreeCAD with UniStation active.
 FreeCAD remains external. For a custom/portable layout, select its actual Mod.
 
 The wizard checks version 1.1.1–1.1.4 and required x64/Python 3.11 files, not
-arbitrary ABI combinations. Manual installation/launch and the alpha.6 uninstall
-retest passed in the reported scope; full regression and failure recovery are
-not certified. [Installer guide](installer.md) ·
-[Release notes](release-v0.1.0-alpha.6.md) · [Dependencies](dependencies.md).
+arbitrary ABI combinations. Earlier alpha.6 installation/launch/uninstall and alpha.11 installer checks
+passed in their recorded scope. The new alpha.12 EXE needs a separate installation
+smoke check; full regression and failure recovery are not certified. [Installer guide](installer.md) ·
+[Release notes](release-v0.1.0-alpha.12.md) · [Dependencies](dependencies.md).
+
+## Alpha.12 upgrade
+
+The alpha.12 build includes Line continuation and circular Wire segments.
+When upgrading, select the same Mod directory. Keep the shortcuts component
+selected to refresh existing UniStation shortcuts.
+[Candidate instructions](installer.md#upgrade-and-removal).
 
 ## Manual source installation — advanced
 

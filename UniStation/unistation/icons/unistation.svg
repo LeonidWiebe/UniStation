@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64">
+  <title>UniStation workbench — borderless contour</title>
+  <path d="M7 20 24 16 57 20 57 41 24 49 7 44Z M24 16V49 M42 18.181818V32.5" transform="translate(32 32) scale(1.02) translate(-32 -32)" fill="none" stroke="#E4ECF2" stroke-width="8.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7 20 24 16 57 20 57 41 24 49 7 44Z M24 16V49 M42 18.181818V32.5" transform="translate(32 32) scale(1.02) translate(-32 -32)" fill="none" stroke="#28343F" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

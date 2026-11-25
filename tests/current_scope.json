@@ -47,6 +47,7 @@
     "circle_rollback",
     "wire_open_undo_save",
     "wire_closed_button",
+    "wire_center_arc",
     "wire_closed_first_point_world",
     "wire_cancel",
     "wire_mouse_endpoint_snap",
@@ -214,7 +215,8 @@
     "test_gui_diagnostics.MacroBranchTests",
     "test_line.LineTests",
     "test_transform.TransformTests",
-    "test_wire.WireTests"
+    "test_wire.WireTests",
+    "test_wire.WireArcTests"
   ],
   "deferred_unit": [
     {

@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "UniStation"))
-from unistation.line import LineSession
+from unistation.line import LineSession, PointResult
 
 
 class Vector:
@@ -27,6 +27,7 @@ class Backend:
         self.live = True
         self.created = []
         self.errors = []
+        self.preview_points = None
         self.closed = 0
         self.fail = False
 
@@ -42,7 +43,10 @@ class Backend:
         self.created.append((first, last))
 
     def preview(self, first, last):
-        pass
+        self.preview_points = (first, last)
+
+    def clear_preview(self):
+        self.preview_points = None
 
     def report(self, error):
         self.errors.append(error)
@@ -66,12 +70,45 @@ class LineTests(unittest.TestCase):
         self.ends += 1
 
     def test_two_points_one_line_and_late_callback_ignored(self):
+        self.session.continue_drawing = False
         self.session.point(Vector(1, 2, 3), True)
         self.session.point(Vector(4, 6, 3), True)
         self.session.point(Vector(9), True)
         self.assertEqual(len(self.backend.created), 1)
         self.assertEqual((self.backend.created[0][1] -
                           self.backend.created[0][0]).Length, 5)
+        self.assertEqual(self.ends, 1)
+
+    def test_continues_by_default_and_honors_toggle_at_next_endpoint(self):
+        point = self.callbacks["callback"]
+        move = self.callbacks["movecallback"]
+        self.assertTrue(self.session.continue_drawing)
+        self.assertIs(point(Vector(1), True), PointResult.ACCEPTED)
+        endpoint = Vector(2)
+        move(endpoint)
+        self.assertIs(point(endpoint, True), PointResult.CREATED)
+        self.assertFalse(self.session.closed)
+        self.assertIsNone(self.backend.preview_points)
+        self.assertIsNot(self.session.first, endpoint)
+        self.assertIs(point(Vector(2), True), PointResult.REJECTED)
+        move(Vector(3))
+        self.assertEqual(tuple(p.x for p in self.backend.preview_points), (2, 3))
+
+        self.session.continue_drawing = False
+        self.assertIs(point(Vector(3), True), PointResult.CREATED)
+        self.assertTrue(self.session.closed)
+        self.assertEqual([(a.x, b.x) for a, b in self.backend.created], [(1, 2), (2, 3)])
+        self.assertEqual(self.ends, 1)
+
+    def test_cancel_after_segment_preserves_only_committed_geometry(self):
+        self.session.point(Vector(1), True)
+        self.session.point(Vector(2), True)
+        self.session.move(Vector(3))
+
+        self.callbacks["finishcallback"]()
+
+        self.assertTrue(self.session.closed)
+        self.assertEqual([(a.x, b.x) for a, b in self.backend.created], [(1, 2)])
         self.assertEqual(self.ends, 1)
 
     def test_cancel_never_creates_partial_line(self):

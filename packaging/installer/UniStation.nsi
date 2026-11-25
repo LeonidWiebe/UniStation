@@ -52,12 +52,16 @@ Var UnUniCheck
 Var UnAFCheck
 Var UnRunUni
 Var UnRunAF
+Var UnBackupDir
+Var UnResult
 Var OriginalToken
 Var OriginalPath
 Var RemoveName
 Var SummaryText
 
 !define MUI_ABORTWARNING
+!define MUI_ICON "${__FILEDIR__}\unistation-setup.ico"
+!define MUI_UNICON "${__FILEDIR__}\unistation.ico"
 !define MUI_LANGDLL_REGISTRY_ROOT HKCU
 !define MUI_LANGDLL_REGISTRY_KEY "${REGKEY}"
 !define MUI_LANGDLL_REGISTRY_VALUENAME "Language"
@@ -78,7 +82,7 @@ Page custom SummaryPage
 !insertmacro MUI_UNPAGE_CONFIRM
 UninstPage custom un.ComponentsPage un.ComponentsLeave
 !insertmacro MUI_UNPAGE_INSTFILES
-!define MUI_UNFINISHPAGE_TEXT "$(UnFinished)"
+!define MUI_UNFINISHPAGE_TEXT "$UnResult"
 !insertmacro MUI_UNPAGE_FINISH
 !insertmacro MUI_LANGUAGE "Russian"
 !insertmacro MUI_LANGUAGE "English"
@@ -141,6 +145,12 @@ LangString UnError ${LANG_RUSSIAN} "Не удалось безопасно об�
 LangString UnError ${LANG_ENGLISH} "Unable to safely process $RemoveName. Its files and backups were preserved. Close FreeCAD and inspect:$\r$\n$StateDir"
 LangString UnFinished ${LANG_RUSSIAN} "Выбранные компоненты обработаны. Если вы оставили другие компоненты, запись удаления сохраняется.$\r$\n$\r$\nПрежние версии восстановлены при наличии. Убранные версии и дополнительные файлы сохранены в:$\r$\n$StateDir$\r$\n$\r$\nКаталог Mod и настройки FreeCAD не удалены."
 LangString UnFinished ${LANG_ENGLISH} "Selected components were processed. The uninstall entry remains if other components were kept.$\r$\n$\r$\nPrevious versions were restored when available. Retired versions and additional files remain at:$\r$\n$StateDir$\r$\n$\r$\nThe Mod directory and FreeCAD settings were not deleted."
+LangString UnBackupError ${LANG_RUSSIAN} "Не удалось перенести служебную папку из Mod. Резервные копии сохранены в:$\r$\n$StateDir$\r$\n$\r$\nУбедитесь, что родительский каталог доступен для записи, закройте открытые файлы и запустите удаление ещё раз."
+LangString UnBackupError ${LANG_ENGLISH} "The backup folder could not be moved out of Mod. Backups remain at:$\r$\n$StateDir$\r$\n$\r$\nCheck write access to the parent directory, close open files and run the uninstaller again."
+LangString UnComplete ${LANG_RUSSIAN} "Удаление завершено."
+LangString UnComplete ${LANG_ENGLISH} "Uninstall completed."
+LangString UnRecycleError ${LANG_RUSSIAN} "Удаление завершено. Windows не смогла переместить всю папку резервных копий в Корзину:$\r$\n$UnBackupDir"
+LangString UnRecycleError ${LANG_ENGLISH} "Uninstall completed. Windows could not send the entire backup folder to the Recycle Bin:$\r$\n$UnBackupDir"
 
 Section "-Prepare"
   Call ValidateTarget
@@ -289,7 +299,7 @@ af_not_present:
   WriteRegStr HKCU "${UNKEY}" "Publisher" "UniStation contributors"
   WriteRegStr HKCU "${UNKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${UNKEY}" "UninstallString" '$\"$StateDir\Uninstall.exe$\"'
-  WriteRegStr HKCU "${UNKEY}" "DisplayIcon" "$StateDir\Uninstall.exe"
+  WriteRegStr HKCU "${UNKEY}" "DisplayIcon" "$StateDir\Launch-UniStation.exe,0"
   WriteRegStr HKCU "${UNKEY}" "URLInfoAbout" "https://github.com/LeonidWiebe/UniStation"
   WriteRegDWORD HKCU "${UNKEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNKEY}" "NoRepair" 1
@@ -549,7 +559,7 @@ Function CreateLaunchShortcuts
   Goto desktop_shortcut
 create_start_shortcut:
   ClearErrors
-  CreateShortcut "$SMPROGRAMS\UniStation\UniStation - FreeCAD.lnk" "$StateDir\Launch-UniStation.exe" "" "$FcExe" 0 SW_SHOWNORMAL "" "UniStation / FreeCAD"
+  CreateShortcut "$SMPROGRAMS\UniStation\UniStation - FreeCAD.lnk" "$StateDir\Launch-UniStation.exe" "" "$StateDir\Launch-UniStation.exe" 0 SW_SHOWNORMAL "" "UniStation / FreeCAD"
   IfErrors start_shortcut_failed
   WriteINIStr "$StateDir\state.ini" "Launch" "StartMenuOwned" 1
   Goto desktop_shortcut
@@ -563,7 +573,7 @@ desktop_shortcut:
   Return
 create_desktop_shortcut:
   ClearErrors
-  CreateShortcut "$DESKTOP\UniStation - FreeCAD.lnk" "$StateDir\Launch-UniStation.exe" "" "$FcExe" 0 SW_SHOWNORMAL "" "UniStation / FreeCAD"
+  CreateShortcut "$DESKTOP\UniStation - FreeCAD.lnk" "$StateDir\Launch-UniStation.exe" "" "$StateDir\Launch-UniStation.exe" 0 SW_SHOWNORMAL "" "UniStation / FreeCAD"
   IfErrors desktop_shortcut_failed
   WriteINIStr "$StateDir\state.ini" "Launch" "DesktopOwned" 1
   Return
@@ -585,6 +595,8 @@ Function un.onInit
   ${EndIf}
   ${GetParent} "$StateDir" $INSTDIR
   GetFullPathName $INSTDIR "$INSTDIR"
+  ${GetFileName} "$INSTDIR" $0
+  StrCmp $0 "Mod" 0 un_invalid_state
   ReadINIStr $0 "$StateDir\state.ini" "Install" "Owner"
   ReadINIStr $1 "$StateDir\state.ini" "Install" "Root"
   ${If} $0 != "${OWNER}"
@@ -613,6 +625,10 @@ un_invalid_state:
 FunctionEnd
 
 Function un.ComponentsPage
+  ${If} $UnRunUni != 1
+  ${AndIf} $UnRunAF != 1
+    Abort ; Only final cleanup is pending. Skip component selection.
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $UnDialog
   ${NSD_CreateLabel} 0 0 100% 45u "$(UnHelp)"
@@ -658,6 +674,7 @@ Function un.RemoveComponent
   ; RemoveName is a literal component name supplied by the section below.
   ReadINIStr $0 "$StateDir\state.ini" "Managed" "$RemoveName"
   ${If} $0 != 1
+    ClearErrors
     Return
   ${EndIf}
   StrCpy $OriginalPath ""
@@ -691,37 +708,122 @@ un_no_current:
     Goto un_component_error
   ${EndIf}
 un_restore_ok:
+  ClearErrors
   WriteINIStr "$StateDir\state.ini" "Managed" "$RemoveName" 0
+  IfErrors un_component_error
   DeleteINIStr "$StateDir\state.ini" "Original" "$RemoveName"
   WriteINIStr "$TxnDir\journal.ini" "Processed" "$RemoveName" 1
+  ClearErrors
   Return
 un_component_error:
   WriteINIStr "$TxnDir\journal.ini" "Errors" "$RemoveName" "preserved"
-  MessageBox MB_ICONSTOP "$(UnError)"
+  MessageBox MB_ICONSTOP "$(UnError)" /SD IDOK
+  SetErrors
+FunctionEnd
+
+Function un.RecycleBackup
+  ; Use Windows shell recycling, without walking the backup tree ourselves.
+  System::Call 'kernel32::GetFileAttributesW(w "$UnBackupDir") i .r2'
+  IntOp $2 $2 & 0x410
+  IntCmp $2 0x10 0 recycle_failed recycle_failed
+  ReadINIStr $2 "$UnBackupDir\state.ini" "Install" "Owner"
+  StrCmp $2 "${OWNER}" 0 recycle_failed
+  ReadINIStr $2 "$UnBackupDir\state.ini" "Install" "Root"
+  StrCmp $2 $INSTDIR 0 recycle_failed
+  ; IShellItem, then IFileOperation (CLSID_FileOperation / IID_IFileOperation).
+  System::Call 'shell32::SHCreateItemFromParsingName(w "$UnBackupDir", p 0, g "{43826D1E-E718-42EE-BC55-A1E261C37BFE}", *p .r0) i .r2'
+  StrCmp $2 0 0 recycle_failed
+  System::Call 'ole32::CoCreateInstance(g "{3AD05575-8857-4850-9277-11B85BDB8E09}", p 0, i 1, g "{947AAB5F-0A5C-4C13-B4D6-4BF7836FC9F8}", *p .r1) i .r2'
+  StrCmp $2 0 0 recycle_release_item
+  ; FOFX_RECYCLEONDELETE | FOFX_EARLYFAILURE | FOF_ALLOWUNDO | FOF_NO_UI.
+  ; No shell confirmation, progress or error dialogs; inspect HRESULT/aborted below.
+  System::Call '$1->5(i 0x00180654) i .r2'
+  StrCmp $2 0 0 recycle_release_operation
+  System::Call '$1->9(p $HWNDPARENT)' ; SetOwnerWindow
+  System::Call '$1->18(p r0, p 0) i .r2' ; DeleteItem
+  StrCmp $2 0 0 recycle_release_operation
+  System::Call '$1->21() i .r2' ; PerformOperations
+  StrCmp $2 0 0 recycle_release_operation
+  System::Call '$1->22(*i .r3) i .r2' ; GetAnyOperationsAborted
+  ${If} $3 != 0
+    StrCpy $2 1
+  ${EndIf}
+recycle_release_operation:
+  System::Call '$1->2()'
+recycle_release_item:
+  System::Call '$0->2()'
+  StrCmp $2 0 0 recycle_failed
+  ClearErrors
+  Return
+recycle_failed:
+  SetErrors
+FunctionEnd
+
+Function un.FinishRemoval
+  ; Rename to a new sibling of Mod so the backups stay on the same volume.
+  ; Refuse to archive a service folder that is itself a filesystem link.
+  System::Call 'kernel32::GetFileAttributesW(w "$StateDir") i .r0'
+  IntOp $0 $0 & 0x410 ; FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT
+  IntCmp $0 0x10 0 archive_failed archive_failed
+  ${GetParent} "$INSTDIR" $0
+  StrCmp $0 "" archive_failed
+  System::Call 'kernel32::GetFullPathNameW(w "$0\UniStation-Backup-$TxnName", i ${NSIS_MAX_STRLEN}, w .r1, p 0) i .r2'
+  ${If} $2 == 0
+  ${OrIf} $2 >= ${NSIS_MAX_STRLEN}
+    Goto archive_failed
+  ${EndIf}
+  StrCpy $UnBackupDir $1
+  SetOutPath "$INSTDIR"
+  ClearErrors
+  Rename "$StateDir" "$UnBackupDir"
+  IfErrors archive_failed
+
+  ReadRegStr $2 HKCU "${REGKEY}" "ModRoot"
+  ${If} $2 == $INSTDIR
+    DeleteRegKey HKCU "${UNKEY}"
+    DeleteRegKey HKCU "${REGKEY}"
+    Delete "$SMPROGRAMS\UniStation\Uninstall.lnk"
+    Delete "$SMPROGRAMS\UniStation\UniStation.url"
+    RMDir "$SMPROGRAMS\UniStation"
+  ${EndIf}
+  WriteINIStr "$UnBackupDir\state.ini" "Install" "Status" "uninstalled-backups-retained"
+  Delete "$UnBackupDir\Uninstall.exe"
+  Call un.RecycleBackup
+  IfErrors archive_recycle_failed
+  IfFileExists "$UnBackupDir" archive_recycle_failed
+  StrCpy $UnResult "$(UnComplete)"
+  Goto archive_done
+archive_recycle_failed:
+  StrCpy $UnResult "$(UnRecycleError)"
+archive_done:
+  ClearErrors
+  Return
+archive_failed:
+  MessageBox MB_ICONSTOP "$(UnBackupError)" /SD IDOK
   SetErrors
 FunctionEnd
 
 Section "Uninstall"
   Call un.EnsureClosed
+  StrCpy $UnResult "$(UnFinished)"
   System::Call 'kernel32::GetCurrentProcessId() i .r0'
   System::Call 'kernel32::GetTickCount() i .r1'
-  StrCpy $TxnDir "$StateDir\transactions\remove-$0-$1"
-  IfFileExists "$TxnDir" 0 +2
-    Abort
-  ClearErrors
-  CreateDirectory "$TxnDir"
-  IfErrors 0 +2
-    Abort
+  StrCpy $TxnName "remove-$0-$1"
+  ${If} $UnRunUni == 1
+  ${OrIf} $UnRunAF == 1
+    StrCpy $TxnDir "$StateDir\transactions\$TxnName"
+    IfFileExists "$TxnDir" uninstall_failed
+    ClearErrors
+    CreateDirectory "$TxnDir"
+    IfErrors uninstall_failed
+  ${EndIf}
   ${If} $UnRunUni == 1
     StrCpy $RemoveName "UniStation"
     Call un.RemoveComponent
-  ${EndIf}
-  ${If} $UnRunAF == 1
-    StrCpy $RemoveName "AxisFlow"
-    Call un.RemoveComponent
+    ; UniStation may still need the managed AxisFlow after this failure.
+    IfErrors uninstall_failed
   ${EndIf}
   ReadINIStr $0 "$StateDir\state.ini" "Managed" "UniStation"
-  ReadINIStr $1 "$StateDir\state.ini" "Managed" "AxisFlow"
   ${If} $0 != 1
     ReadINIStr $2 "$StateDir\state.ini" "Launch" "StartMenuOwned"
     ${If} $2 == 1
@@ -734,19 +836,23 @@ Section "Uninstall"
       DeleteINIStr "$StateDir\state.ini" "Launch" "DesktopOwned"
     ${EndIf}
   ${EndIf}
+  ${If} $UnRunAF == 1
+    StrCpy $RemoveName "AxisFlow"
+    Call un.RemoveComponent
+    IfErrors uninstall_failed
+  ${EndIf}
+  ReadINIStr $0 "$StateDir\state.ini" "Managed" "UniStation"
+  ReadINIStr $1 "$StateDir\state.ini" "Managed" "AxisFlow"
   ${If} $0 != 1
   ${AndIf} $1 != 1
-    ReadRegStr $2 HKCU "${REGKEY}" "ModRoot"
-    ${If} $2 == $INSTDIR
-      DeleteRegKey HKCU "${UNKEY}"
-      DeleteRegKey HKCU "${REGKEY}"
-      Delete "$SMPROGRAMS\UniStation\Uninstall.lnk"
-      Delete "$SMPROGRAMS\UniStation\UniStation.url"
-      RMDir "$SMPROGRAMS\UniStation"
-    ${EndIf}
-    WriteINIStr "$StateDir\state.ini" "Install" "Status" "uninstalled-backups-retained"
-    Delete "$StateDir\Uninstall.exe"
+    Call un.FinishRemoval
+    IfErrors uninstall_failed
   ${EndIf}
+  Goto uninstall_done
+uninstall_failed:
+  SetErrorLevel 2
+  Abort
+uninstall_done:
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
